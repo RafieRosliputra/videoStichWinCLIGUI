@@ -220,6 +220,15 @@ Atau guna skrip siap: **`build\build-exe.ps1`** — auto install ps2exe, bina du
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build\build-exe.ps1
 ```
 
+Kalau `Import-Module ps2exe` gagal dengan *"running scripts is disabled on this system"*:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
+Set-ExecutionPolicy -Scope Process Bypass -Force
+```
+
+Kalau `Cannot find path '...\bin\stitch.ps1'` — anda berada dalam folder salah. Pastikan `Get-ChildItem` nampak `bin`, `gui`, `build` (folder hasil extract), bukan `C:\Users\<nama>`.
+
 Nota penting:
 - Exe ps2exe **masih perlukan PowerShell 5.1 + .NET Framework** — ada pada semua Windows 11, jadi tiada install tambahan untuk pengguna
 - Belum di-sign → SmartScreen/AV kadang flag false positive; **More info → Run anyway**
