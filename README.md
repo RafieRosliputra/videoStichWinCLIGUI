@@ -66,7 +66,7 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\bin\stitch.ps1 -Files
 
 | Parameter | Maksud |
 |---|---|
-| `-Files` | Senarai input, **ikut susunan** |
+| `-Files` | Senarai input, **ikut susunan**. Boleh: `'a.mp4','b.mp4'` (array PowerShell), `"a.mp4,b.mp4"` (satu argumen koma), atau `"a.mp4;b.mp4"` |
 | `-Out` | Fail output `.mp4` |
 | `-Mode` | `copy` (default) · `hevc` · `h264` |
 | `-Quality` | `high` (CRF 20) · `balanced` (CRF 23, default) · `small` (CRF 28) |
@@ -136,7 +136,7 @@ Ujian merangkumi: natural sort (`clip2 < clip10`), escaping laluan concat, penge
 Keputusan pada mesin pembangunan (macOS arm64, PowerShell 7.7.0, ffmpeg 9.0.2):
 
 ```
-Keputusan: 15 lulus, 0 gagal
+Keputusan: 16 lulus, 0 gagal
 ```
 
 GUI WinForms tidak boleh dijalankan pada macOS — semak pada Windows:

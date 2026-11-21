@@ -127,6 +127,24 @@ function Sort-FilesNatural {
     return , $list.ToArray()
 }
 
+function Expand-Files {
+    # Benarkan: array, atau SATU string dipisah koma / koma bertitik / baris baru.
+    # (PowerShell -File tidak memecah koma, jadi 'a.mp4,b.mp4' tiba sebagai 1 item.)
+    param([string[]] $Inputs)
+    $out = [System.Collections.Generic.List[string]]::new()
+    foreach ($i in $Inputs) {
+        if (-not $i) { continue }
+        if (Test-Path -LiteralPath $i) { [void] $out.Add($i); continue }
+        $parts = @($i -split "\r?\n|;")
+        if ($parts.Count -eq 1 -and $i.Contains(',')) { $parts = @($i -split ',') }
+        foreach ($p in $parts) {
+            $t = $p.Trim().Trim('"').Trim("'")
+            if ($t) { [void] $out.Add($t) }
+        }
+    }
+    return , $out.ToArray()
+}
+
 function Get-MediaInfo {
     param([string] $Path, [string] $FFprobePath)
     $raw = & $FFprobePath -v error -print_format json -show_streams -show_format -i $Path 2>$null
@@ -235,6 +253,7 @@ function Invoke-Stitch {
         [string] $Log, [string] $State
     )
 
+    $Files = Expand-Files -Inputs $Files
     if (-not $Files -or $Files.Count -lt 1) { throw 'Tiada fail input (-Files).' }
     if (-not $Out) { throw 'Tiada output (-Out).' }
     foreach ($f in $Files) { if (-not (Test-Path -LiteralPath $f)) { throw "Fail tidak wujud: $f" } }

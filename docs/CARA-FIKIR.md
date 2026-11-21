@@ -146,7 +146,9 @@ Untuk `copy`, normalisasi **tidak** digunakan — sebab itu keseragaman wajib.
 - Hantar ke `Start-Process -ArgumentList`: satu **string** arahan dengan `"..."` di sekeliling setiap laluan (Start-Process tak quote sendiri untuk array)
 - Fail concat ffmpeg: `file '<path>'`, `\` → `/`, `'` dalam nama → guna `"..."` + escape `\"`
 
-**(b) Encoding skrip.** PowerShell 5.1 baca fail `.ps1` tanpa BOM sebagai ANSI → aksara BM dalam `MessageBox`/label jadi mojibake. Jadi fail `.ps1` ditulis **UTF-8 dengan BOM** (walaupun sekarang semua aksara ASCII, BOM mengelak kejutan bila teks BM ditambah kemudian). Fail concat ditulis UTF-8 **tanpa** BOM (ffmpeg baca bytes; BOM akan jadi sebahagian nama fail pertama).
+**(b) `-File` tidak memecah koma.** PowerShell `-File skrip.ps1 -Files a.mp4,b.mp4` menghantar **satu** string `a.mp4,b.mp4`; `[string[]]` jadi array 1 elemen, dan `Test-Path` gagal. Ini bukan pilihan reka bentuk — ia had `-File`. Penyelesaian: CLI ada `Expand-Files` yang memecah koma / `;` / baris baru bila elemen tunggal bukan fail sebenar. Tanpa ini, `stitch.cmd -Files a.mp4,b.mp4` mustahil berfungsi.
+
+**(c) Encoding skrip.** PowerShell 5.1 baca fail `.ps1` tanpa BOM sebagai ANSI → aksara BM dalam `MessageBox`/label jadi mojibake. Jadi fail `.ps1` ditulis **UTF-8 dengan BOM** (walaupun sekarang semua aksara ASCII, BOM mengelak kejutan bila teks BM ditambah kemudian). Fail concat ditulis UTF-8 **tanpa** BOM (ffmpeg baca bytes; BOM akan jadi sebahagian nama fail pertama).
 
 ---
 

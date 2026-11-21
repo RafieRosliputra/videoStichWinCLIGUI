@@ -202,6 +202,24 @@ Check 'cantuman dengan apostrof dalam nama fail' {
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+Check 'senarai fail dalam satu argumen koma (-File)' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-comma-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'
+        New-TestClip -Path $a -Color red -Seconds 1
+        New-TestClip -Path $b -Color blue -Seconds 1
+        $out = Join-Path $tmp 'o.mp4'
+        # & $psExe -File TIDAK memecah koma; CLI mesti uruskan sendiri.
+        $r = & $psExe -NoProfile -File $cli -Files ($a + ',' + $b) -Out $out -Mode copy 2>&1
+        Assert-Equal $LASTEXITCODE 0 ($r -join ' | ')
+        $dur = & ffprobe -v error -show_entries format=duration -of csv=p=0 $out
+        Assert-True ([double] $dur -gt 1.8) "durasi $dur"
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 Check 'mod copy menolak klip tak seragam' {
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
     $tmp = Join-Path $TmpBase ('vs-mix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))

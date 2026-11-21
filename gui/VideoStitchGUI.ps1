@@ -72,9 +72,10 @@ function Compare-Natural {
 
 function Sort-FilesNatural {
     param([string[]] $Paths)
-    $arr = [string[]] $Paths.Clone()
-    [Array]::Sort($arr, [System.Comparison[string]] { param($a, $b) Compare-Natural -A (Split-Path -Leaf $a) -B (Split-Path -Leaf $b) })
-    return , $arr
+    $list = [System.Collections.Generic.List[string]]::new()
+    foreach ($p in $Paths) { [void] $list.Add($p) }
+    $list.Sort([System.Comparison[string]] { param($a, $b) Compare-Natural -A (Split-Path -Leaf $a) -B (Split-Path -Leaf $b) })
+    return , $list.ToArray()
 }
 
 function Test-VideoFile {
