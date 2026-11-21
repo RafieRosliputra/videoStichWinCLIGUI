@@ -45,6 +45,25 @@ Tiada pemasangan senyap — sentiasa ada pengesahan atau flag eksplisit.
 
 ## 3. Mula pantas — GUI
 
+### 3a. Muat turun & buka (Windows 11)
+
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.1.zip`
+2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
+3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
+4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
+5. Belum ada ffmpeg? Tekan **Mula** → jawab **Ya** pada dialog pemasangan → tekan **Mula** semula
+6. Drag & drop klip
+
+Kalau GUI tak muncul, jalankan dari Terminal untuk lihat ralat:
+
+```powershell
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\gui\VideoStitchGUI.ps1
+```
+
+Log ralat GUI (kalau ada): `%TEMP%\VideoStitch-gui-error.log`. Launcher sudah guna `-ExecutionPolicy Bypass`, jadi tak perlu tukar execution policy.
+
+### 3b. Langkah harian
+
 1. Double-click **`gui.cmd`**
 2. Drag & drop klip ke senarai (default susun ikut nama)
 3. Betulkan susunan: **Naik / Turun / Buang / Susun ikut nama**

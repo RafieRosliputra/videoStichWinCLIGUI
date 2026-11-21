@@ -586,4 +586,18 @@ $form.Add_FormClosing({ $script:Timer.Stop(); $script:Timer.Dispose() })
 
 $cmbMode.SelectedIndex = 0
 Update-Preview
-[void] $form.ShowDialog()
+
+try {
+    [void] $form.ShowDialog()
+}
+catch {
+    # Konsol disembunyikan oleh gui.cmd; jadi ralat mesti ke fail + dialog.
+    $log = Join-Path ([IO.Path]::GetTempPath()) 'VideoStitch-gui-error.log'
+    $msg = "GUI gagal dibuka.`n`n$($_.Exception.Message)`n`nLog: $log"
+    try {
+        $detail = "videoStitch GUI error`n$(Get-Date -Format o)`nPS $($PSVersionTable.PSVersion)`n`n$($_ | Out-String)`n$($_.ScriptStackTrace)"
+        [System.IO.File]::WriteAllText($log, $detail)
+    }
+    catch { }
+    [System.Windows.Forms.MessageBox]::Show($msg, 'videoStitch', 'OK', 'Error') | Out-Null
+}
