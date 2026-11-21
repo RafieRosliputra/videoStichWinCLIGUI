@@ -47,7 +47,7 @@ Tiada pemasangan senyap — sentiasa ada pengesahan atau flag eksplisit.
 
 ### 3a. Muat turun & buka (Windows 11)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.1.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.2.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -135,6 +135,7 @@ videoStichWinCLIGUI/
 ├─ stitch.cmd              # launcher CLI
 ├─ bin/stitch.ps1          # enjin + CLI (probe, sahkan, bina arahan, progress)
 ├─ gui/VideoStitchGUI.ps1  # WinForms GUI (drag-drop, susunan, kualiti, progress)
+├─ build/build-exe.ps1     # bina dist\VideoStitch.exe + dist\stitch.exe (ps2exe)
 ├─ tests/run-tests.ps1     # ujian (natural sort, uniformiti, list, merge sebenar)
 └─ docs/CARA-FIKIR.md      # kenapa ia direka begini (keputusan + tradeoff)
 ```
@@ -190,7 +191,46 @@ Ia cetak versi PowerShell, ketersediaan WinForms, laluan ffmpeg, laluan CLI, dan
 
 ---
 
-## 9. Lesen
+## 9. Compile ke .exe (Windows)
+
+Paling cepat: **ps2exe** (membalut skrip jadi exe; tak perlu tulis semula C#).
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+Install-Module ps2exe -Scope CurrentUser -Force -AllowClobber
+Import-Module ps2exe
+
+# GUI (tiada konsol, STA untuk WinForms)
+Invoke-PS2EXE -InputFile .\gui\VideoStitchGUI.ps1 -OutputFile .\dist\VideoStitch.exe `
+    -noConsole -STA -title videoStitch -product videoStitch -company RafieRosliputra `
+    -description "Cantum video" -version 0.1.2
+
+# CLI
+Invoke-PS2EXE -InputFile .\bin\stitch.ps1 -OutputFile .\dist\stitch.exe `
+    -title stitch -product videoStitch -version 0.1.2
+
+# enjin mesti ada sebelah exe
+New-Item -ItemType Directory -Force .\dist\bin | Out-Null
+Copy-Item .\bin\stitch.ps1 .\dist\bin\stitch.ps1
+```
+
+Atau guna skrip siap: **`build\build-exe.ps1`** — auto install ps2exe, bina dua exe, salin enjin, senaraikan saiz:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build\build-exe.ps1
+```
+
+Nota penting:
+- Exe ps2exe **masih perlukan PowerShell 5.1 + .NET Framework** — ada pada semua Windows 11, jadi tiada install tambahan untuk pengguna
+- Belum di-sign → SmartScreen/AV kadang flag false positive; **More info → Run anyway**
+- ffmpeg kekal luaran: `winget install -e --id Gyan.FFmpeg` atau letak `ffmpeg.exe` + `ffprobe.exe` dalam `dist\bin`
+- `dist\` mesti kekal berstruktur: `VideoStitch.exe` + `bin\stitch.ps1`
+
+Kalau nak **exe benar-benar standalone** (tanpa PowerShell), itu perlukan port C# + `dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true` — saiz ~70 MB, belum dibuat (rujuk `docs/CARA-FIKIR.md` §2b).
+
+---
+
+## 10. Lesen
 
 MIT — lihat [LICENSE](LICENSE).
 

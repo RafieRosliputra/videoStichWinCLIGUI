@@ -51,6 +51,20 @@ Alternatif PowerShell + WPF (XAML) lebih cantik tetapi XAML dalam string PowerSh
 
 ---
 
+## 2b. Bila perlu .exe: ps2exe vs C# self-contained
+
+| Cara | Masa | Saiz | Keperluan pengguna | Status |
+|---|---|---|---|---|
+| PowerShell + `gui.cmd` | 0 minit | 0 | PowerShell 5.1 (ada) | ✅ v0.1.2 |
+| **ps2exe** (`build-exe.ps1`) | ~2 minit | ~200–400 KB | PowerShell 5.1 + .NET Framework (ada) | ✅ v0.1.2 |
+| C# port + `dotnet publish --self-contained` | 1–2 hari | ~70–150 MB | tiada (runtime dibundel) | ❌ belum |
+
+ps2exe dipilih kerana: (a) tak perlu tulis semula 900 baris logik dalam C#, (b) tiada risiko regresi logik yang sudah diuji, (c) Windows 11 sentiasa ada PowerShell 5.1. Kelemahan: exe masih bergantung pada PowerShell, dan AV kadang flag pembalut PowerShell sebagai suspek (false positive).
+
+Bila `-noConsole` dipakai, `$PSScriptRoot` dalam skrip yang dikompil menunjuk folder sementara (ps2exe extract). Sebab itu GUI ada `Get-BaseDir` yang mencuba `$env:VIDEOSTITCH_ROOT` → folder skrip → folder exe (`[Environment]::GetCommandLineArgs()[0]`), dan hanya terima calon yang ada `bin\stitch.ps1`. Tanpa ini, GUI bertukar jadi exe tak jumpa enjin.
+
+---
+
 ## 3. Kenapa job dijalankan **detached** dalam tetingkap PowerShell baru
 
 Keperluan "GUI boleh terus tutup" menghalang `Start-Process -Wait` atau `&` dalam GUI (job mati bila GUI mati). Pilihan:

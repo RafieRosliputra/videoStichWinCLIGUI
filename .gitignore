@@ -3,3 +3,4 @@
 .DS_Store
 out.mp4
 *converted.mp4
+dist/

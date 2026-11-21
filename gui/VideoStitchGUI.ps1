@@ -114,7 +114,19 @@ function Quote-PS { param([string] $s) return "'" + $s.Replace("'", "''") + "'" 
 
 # --------------------------------------------------------------- keadaan ----
 
-$script:RepoRoot = Split-Path -Parent $PSScriptRoot          # .../videoStichWinCLIGUI
+# Cari folder repo/instalasi. Bila dikompil jadi .exe (ps2exe), $PSScriptRoot
+# menunjuk ke folder sementara - jadi turutan carian bermula dari exe/ENV.
+function Get-BaseDir {
+    $candidates = @()
+    if ($env:VIDEOSTITCH_ROOT) { $candidates += $env:VIDEOSTITCH_ROOT }
+    $candidates += (Split-Path -Parent $PSScriptRoot)
+    try { $candidates += (Split-Path -Parent ([Environment]::GetCommandLineArgs()[0])) } catch { }
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath (Join-Path $c 'bin\stitch.ps1'))) { return $c }
+    }
+    return (Split-Path -Parent $PSScriptRoot)
+}
+$script:RepoRoot = Get-BaseDir
 $script:CliPath  = Join-Path $script:RepoRoot 'bin\stitch.ps1'
 $script:Files    = [System.Collections.Generic.List[string]]::new()
 $script:JobDir   = $null
