@@ -138,6 +138,22 @@ Untuk `copy`, normalisasi **tidak** digunakan — sebab itu keseragaman wajib.
 
 ---
 
+## 6b. ffmpeg auto-install: opt-in, bukan senyap
+
+Klip tak boleh dicantum tanpa ffmpeg. Tiga pilihan:
+
+| Pilihan | Risiko |
+|---|---|
+| Gagal + tunjuk arahan | pengguna tersekat; ramai tak tahu winget |
+| Pasang senyap | menyentuh sistem tanpa izin — tidak boleh diterima |
+| **Tanya dulu / flag `-Install`** ✅ | selamat; satu langkah tambahan |
+
+Auto-pasang guna `winget install -e --id Gyan.FFmpeg` (Microsoft, build Gyan). Selepas pasang, `Get-FFmpegPath` juga menyemak `%LOCALAPPDATA%\Microsoft\WinGet\Links\ffmpeg.exe` kerana PATH sesi semasa tidak dikemas kini secara automatik.
+
+Kenapa bukan `choco`/`scoop`? Kedua-duanya perlu dipasang dahulu. Winget ada pada Windows 11 secara lalai — laluan paling sedikit geseran.
+
+---
+
 ## 7. Quoting & encoding: dua perangkap yang dibetulkan awal
 
 **(a) Laluan berjalan melalui 3 lapisan shell.** GUI → `job.ps1` → `stitch.ps1` → `Start-Process` → ffmpeg. Setiap lapisan ada quoting sendiri:
@@ -208,3 +224,4 @@ Tanpa itu, status akhir job sentiasa 0. Ini dibetulkan dan diuji (ujian `mod cop
 | 6 | scale+pad+setsar+fps | klip heterogen selamat |
 | 7 | UTF-8 BOM (.ps1) / no-BOM (concat) | PS5.1 ANSI trap, ffmpeg raw bytes |
 | 8 | `-tag:v hvc1` | keserasian Apple |
+| 9 | auto-install ffmpeg opt-in | selamat, tak sentuh sistem tanpa izin |

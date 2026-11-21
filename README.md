@@ -33,6 +33,14 @@ ffmpeg -version
 
 Kalau ffmpeg tak masuk PATH, letak `ffmpeg.exe` + `ffprobe.exe` dalam folder `bin\` repo, atau guna `-FFmpeg 'C:\...\ffmpeg.exe'`.
 
+**Auto-pasang (opt-in):** kalau ffmpeg tiada, GUI akan tanya *“Pasang sekarang guna winget?”* dan buka tetingkap pemasangan. CLI pula guna `-Install`:
+
+```powershell
+.\stitch.cmd -Files a.mp4,b.mp4 -Out out.mp4 -Install
+```
+
+Tiada pemasangan senyap — sentiasa ada pengesahan atau flag eksplisit.
+
 ---
 
 ## 3. Mula pantas — GUI
@@ -74,6 +82,7 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\bin\stitch.ps1 -Files
 | `-Crf` | Override CRF terus (menang atas `-Quality`) |
 | `-Progress` `-Log` `-State` | Fail kerja (GUI guna ini) |
 | `-FFmpeg` | Laluan `ffmpeg.exe` |
+| `-Install` | Pasang ffmpeg via winget kalau tiada (dengan persetujuan) |
 
 ---
 
@@ -153,7 +162,7 @@ Ia cetak versi PowerShell, ketersediaan WinForms, laluan ffmpeg, laluan CLI, dan
 
 | Gejala | Sebab / ubat |
 |---|---|
-| `ffmpeg tidak dijumpai` | Pasang `winget install -e --id Gyan.FFmpeg`, buka semula terminal |
+| `ffmpeg tidak dijumpai` | GUI akan tawar auto-pasang; atau `winget install -e --id Gyan.FFmpeg`, kemudian buka semula terminal |
 | `Mod copy tidak selamat` | Klip berbeza codec/resolusi/fps → guna `-Mode hevc` |
 | Progress bar tak bergerak | Fail `ffprogress.txt` hanya ditulis selepas ffmpeg mula encode; `copy` sangat laju jadi bar mungkin terus 100% |
 | GUI tak buka (tiada tetingkap) | Jalankan `gui.cmd`; jika masih gagal, jalankan `powershell -STA -File gui\VideoStitchGUI.ps1` dan baca ralat, atau `-SelfTest` untuk semakan persekitaran |

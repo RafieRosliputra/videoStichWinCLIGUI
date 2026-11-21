@@ -62,6 +62,7 @@ param(
     [string]   $Preset = 'medium',
     [int]      $Crf = 0,
     [string]   $FFmpeg,
+    [switch]   $Install,
     [string]   $Progress,
     [string]   $Log,
     [string]   $State
@@ -83,6 +84,17 @@ function Get-FFmpegPath {
     if ($cmd) { return $cmd.Source }
     if ($env:FFMPEG_PATH -and (Test-Path -LiteralPath $env:FFMPEG_PATH)) { return $env:FFMPEG_PATH }
     throw "ffmpeg tidak dijumpai dalam PATH. Windows: winget install -e --id Gyan.FFmpeg"
+}
+
+function Install-FFmpeg {
+    # Opt-in sahaja (-Install atau butang GUI). Tidak memasang secara senyap.
+    if (-not ($env:OS -eq 'Windows_NT')) { throw 'Auto-install hanya untuk Windows (winget).' }
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) { throw 'winget tidak dijumpai. Pasang "App Installer" dari Microsoft Store.' }
+    Write-Host '[ffmpeg] Memasang Gyan.FFmpeg melalui winget...' -ForegroundColor Yellow
+    & $winget.Source install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) { throw "winget gagal (rc=$LASTEXITCODE). Pasang manual: winget install -e --id Gyan.FFmpeg" }
+    Write-Host '[ffmpeg] Selesai dipasang.' -ForegroundColor Green
 }
 
 function Get-FFprobePath {
@@ -249,7 +261,7 @@ function Quote-Arg {
 function Invoke-Stitch {
     param(
         [string[]] $Files, [string] $Out, [string] $Mode, [string] $Quality,
-        [string] $Preset, [int] $Crf, [string] $FFmpeg, [string] $Progress,
+        [string] $Preset, [int] $Crf, [string] $FFmpeg, [switch] $Install, [string] $Progress,
         [string] $Log, [string] $State
     )
 
@@ -259,7 +271,16 @@ function Invoke-Stitch {
     foreach ($f in $Files) { if (-not (Test-Path -LiteralPath $f)) { throw "Fail tidak wujud: $f" } }
     if ($Files.Count -eq 1) { Write-Warning 'Hanya 1 fail: kerja jadi remux, bukan cantuman.' }
 
-    $ff = Get-FFmpegPath -Explicit $FFmpeg
+    try { $ff = Get-FFmpegPath -Explicit $FFmpeg }
+    catch {
+        if ($Install) {
+            Install-FFmpeg
+            $ff = Get-FFmpegPath -Explicit $FFmpeg
+        }
+        else {
+            throw "$($_.Exception.Message)`nCuba: -Install (auto winget) atau 'winget install -e --id Gyan.FFmpeg'."
+        }
+    }
     $fp = Get-FFprobePath -FFmpegPath $ff
     $tmp = [System.IO.Path]::GetTempPath()
     if (-not $Progress) { $Progress = Join-Path $tmp 'video-stitch.progress' }
@@ -372,7 +393,7 @@ function Invoke-Stitch {
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Preset $Preset `
-                      -Crf $Crf -FFmpeg $FFmpeg -Progress $Progress -Log $Log -State $State | Out-Null
+                      -Crf $Crf -FFmpeg $FFmpeg -Install:$Install -Progress $Progress -Log $Log -State $State | Out-Null
         exit 0
     }
     catch {

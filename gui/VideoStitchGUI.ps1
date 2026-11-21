@@ -95,6 +95,21 @@ function Get-FFmpegPath {
     return $null
 }
 
+function Install-FFmpeg {
+    # Opt-in: tanya dulu. Tidak memasang senyap.
+    $ans = [System.Windows.Forms.MessageBox]::Show(
+        "ffmpeg tidak dijumpai.`n`nPasang sekarang guna winget (Gyan.FFmpeg)?`n`nTetingkap PowerShell akan dibuka untuk kerja pemasangan.",
+        'ffmpeg tiada', 'YesNo', 'Question')
+    if ($ans -ne 'Yes') { return }
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        [System.Windows.Forms.MessageBox]::Show('winget tiada. Pasang "App Installer" dari Microsoft Store dahulu.', 'winget tiada', 'OK', 'Warning') | Out-Null
+        return
+    }
+    $arg = '-NoLogo -NoProfile -NoExit -Command "winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements"'
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $arg | Out-Null
+    [System.Windows.Forms.MessageBox]::Show('Tetingkap pemasangan dibuka. Selepas siap, tekan Mula semula.', 'Memasang ffmpeg', 'OK', 'Information') | Out-Null
+}
+
 function Quote-PS { param([string] $s) return "'" + $s.Replace("'", "''") + "'" }
 
 # --------------------------------------------------------------- keadaan ----
@@ -495,7 +510,12 @@ $btnRun.Add_Click({
 
         if (-not (Test-Path -LiteralPath $script:CliPath)) { throw "CLI tidak dijumpai: $script:CliPath" }
         $ff = Get-FFmpegPath
-        if (-not $ff) { throw 'ffmpeg tidak dijumpai. Pasang: winget install -e --id Gyan.FFmpeg' }
+        if (-not $ff) {
+            Install-FFmpeg
+            $script:Running = $false
+            $lblStatus.Text = 'ffmpeg belum tersedia. Pasang dahulu, kemudian tekan Mula semula.'
+            return
+        }
 
         # folder job berasingan setiap run
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
