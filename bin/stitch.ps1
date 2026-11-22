@@ -74,7 +74,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.2.2'
+$script:AppVersion = '0.3.0'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -506,29 +506,50 @@ function Invoke-Stitch {
     }
 
     # 3) arahan
-    $listDir = Split-Path -Parent $Progress
-    if (-not $listDir -or -not (Test-Path -LiteralPath $listDir)) { $listDir = $tmp }
-    $list = New-ConcatList -Paths $Files -Dir $listDir
-
     $enc = Get-EncodeSettings -Q $Quality -CrfOverride $Crf -Preset $Preset -Mode $Mode
     $ffArgs = [System.Collections.Generic.List[string]]::new()
-    foreach ($a in @('-hide_banner', '-nostdin', '-y', '-loglevel', 'error',
-                     '-f', 'concat', '-safe', '0', '-i', (Quote-Arg $list),
-                     '-progress', (Quote-Arg $Progress))) { $ffArgs.Add($a) }
 
-    $hasAudio = ($infos | Where-Object { $_.HasAudio }).Count -gt 0
     if ($Mode -eq 'copy') {
-        foreach ($a in @('-c', 'copy', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero')) { $ffArgs.Add($a) }
+        $listDir = Split-Path -Parent $Progress
+        if (-not $listDir -or -not (Test-Path -LiteralPath $listDir)) { $listDir = $tmp }
+        $list = New-ConcatList -Paths $Files -Dir $listDir
+        foreach ($a in @('-hide_banner', '-nostdin', '-y', '-loglevel', 'error',
+                         '-f', 'concat', '-safe', '0', '-i', (Quote-Arg $list),
+                         '-progress', (Quote-Arg $Progress),
+                         '-c', 'copy', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero',
+                         '-fflags', '+genpts')) { $ffArgs.Add($a) }
     }
     else {
+        # Encode: satu input per klip + normalisasi setiap satu, kemudian
+        # concat FILTER (bukan concat demuxer). Ini yang menjamin timing
+        # betul bila klip berbeza fps/timebase - punca "output jadi laju".
+        foreach ($info in $infos) { $ffArgs.Add('-i'); $ffArgs.Add((Quote-Arg $info.Path)) }
+
         $filter = Get-NormalizeFilter -Infos $infos -ForceFps $Fps
+        $graph = [System.Collections.Generic.List[string]]::new()
+        $n = $infos.Count
+        for ($i = 0; $i -lt $n; $i++) {
+            $info = $infos[$i]
+            $graph.Add("[${i}:v]$filter,format=yuv420p[v${i}]")
+            if ($info.HasAudio) {
+                $graph.Add("[${i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a${i}]")
+            }
+            else {
+                $dur = if ($info.Duration -gt 0) { '{0:0.###}' -f $info.Duration } else { '3600' }
+                $graph.Add("anullsrc=r=48000:cl=stereo,atrim=0:${dur}[a${i}]")
+            }
+        }
+        $labels = ((0..($n - 1)) | ForEach-Object { "[v$_][a$_]" }) -join ''
+        $graph.Add("${labels}concat=n=${n}:v=1:a=1[vout][aout]")
+
         $plan = Get-EncoderPlan -Encoder $encName -Mode $Mode -Q $Quality -CrfOverride $Crf -Preset $Preset -GpuDevice $GpuDevice
+        foreach ($a in @('-hide_banner', '-nostdin', '-y', '-loglevel', 'error',
+                         '-progress', (Quote-Arg $Progress),
+                         '-filter_complex', (Quote-Arg ($graph -join ';')),
+                         '-map', '[vout]', '-map', '[aout]')) { $ffArgs.Add($a) }
         foreach ($a in @($plan.Args)) { $ffArgs.Add($a) }
-        foreach ($a in @('-pix_fmt', 'yuv420p', '-vf', (Quote-Arg $filter))) { $ffArgs.Add($a) }
+        foreach ($a in @('-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart')) { $ffArgs.Add($a) }
         if ($Mode -eq 'hevc') { $ffArgs.Add('-tag:v'); $ffArgs.Add('hvc1') }
-        if ($hasAudio) { foreach ($a in @('-c:a', 'aac', '-b:a', '192k')) { $ffArgs.Add($a) } }
-        else { $ffArgs.Add('-an') }
-        foreach ($a in @('-movflags', '+faststart')) { $ffArgs.Add($a) }
     }
     $ffArgs.Add((Quote-Arg $Out))
 
@@ -578,6 +599,17 @@ function Invoke-Stitch {
         throw "ffmpeg failed (rc=$code).`n$err`nCommand: $cmdFile"
     }
     & $setState 'DONE' $total
+
+    # Semak durasi output vs jumlah input - elak "output jadi laju" tak dikesan.
+    if ((Test-Path -LiteralPath $Out) -and $total -gt 0) {
+        try {
+            $outDur = [double] (& $fp -v error -show_entries format=duration -of csv=p=0 $Out)
+            if ($outDur -gt 0 -and [Math]::Abs($outDur - $total) -gt [Math]::Max(2.0, $total * 0.02)) {
+                Write-Warning ("Output duration {0:0.0}s != expected {1:0.0}s. The join may play too fast/slow - re-run with -Mode hevc for correct timing." -f $outDur, $total)
+            }
+        }
+        catch { }
+    }
 
     $size = if (Test-Path -LiteralPath $Out) { (Get-Item -LiteralPath $Out).Length } else { 0 }
     Write-Host ("[OK] {0}  ({1:N1} MB, {2:0.0}s)" -f $Out, ($size / 1MB), $sw.Elapsed.TotalSeconds) -ForegroundColor Green

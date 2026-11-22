@@ -178,6 +178,24 @@ Risiko diterima: kalau klip benar-benar 30 vs 60 fps, cantuman copy boleh mengha
 
 ---
 
+## 4e. "Output jadi laju": concat demuxer vs concat filter
+
+`-c copy` + concat demuxer mengambil timestamp setiap fail apa adanya dan menolak edit list/timebase yang berbeza. Klip DJI yang berbeza fps (cth 100 fps dalam set 59.94) atau timebase menghasilkan output yang dimainkan terlalu laju/lambat walaupun saiznya betul.
+
+Penyelesaian untuk mod encode: **buang demuxer**, guna `filter_complex`:
+
+```
+[0:v]scale=...,pad=...,setsar=1,fps=F,format=yuv420p[v0]; [0:a]aresample=48000,aformat=...[a0]
+...
+[v0][a0][v1][a1]...concat=n=N:v=1:a=1[vout][aout]
+```
+
+Setiap input didecode dengan timestamp sendiri, dinormalisasi kepada fps yang sama, kemudian `concat` filter menyambung mengikut **bilangan frame**, bukan timestamp mentah. Durasi output = jumlah durasi input (disahkan ujian: 2+2+1 s → 5.0 s).
+
+Untuk Copy, kami kekalkan demuxer (laju, sifar encode) tetapi tambah `-fflags +genpts` dan **semakan durasi selepas siap**: kalau output menyimpang >2% (atau >2 s) dari jumlah input, amaran dicetak supaya pengguna tahu perlu encode.
+
+---
+
 ## 5. Natural sort, bukan ordinal
 
 Ordinal (`Get-ChildItem | Sort-Object Name`) susun `clip10.mp4` **sebelum** `clip2.mp4` — salah untuk senarai rakaman kamera. Algoritma dipakai:

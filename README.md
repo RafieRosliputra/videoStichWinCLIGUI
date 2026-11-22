@@ -75,7 +75,7 @@ explorer "$env:LOCALAPPDATA\Programs\videoStitch"
 
 ### 3a-alt. Tanpa installer (portable)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.2.2.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.3.0.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -168,6 +168,8 @@ Pilih baris GPU → GUI hantar `-Encoder nvenc -GpuDevice 0`. Kalau ada 2 kad NV
 
 Pemetaan kualiti per enjin: CPU `-crf`, NVENC `-cq` (CQ = CRF−1), QSV `-global_quality`, AMF `-qp_i/-qp_p`, MF `-b:v` (10M/6M/3M).
 
+**Kenapa encode lebih selamat daripada Copy untuk klip DJI:** Copy guna concat *demuxer* — timestamps setiap fail diambil apa adanya. Bila klip berbeza fps/timebase/edit-list, pemain boleh main terlalu laju. Encode (v0.3.0+) guna concat *filter*: setiap klip didecode, dinormalisasi (`scale`/`pad`/`setsar`/`fps`), kemudian dicantum — durasi output = jumlah durasi input.
+
 **Paksa fps:** `-Fps 60` (GUI: dropdown fps). Hanya berkesan dalam mod encode — **Copy tak boleh ubah fps** (stream copy kekalkan kadar asal) dan CLI akan menolaknya dengan mesej jelas. Perhatian: memaksa 59.94 → 60 cuma menduplikasi ~0.06% frame (tak nampak); memaksa 30 → 60 menduplikasi 50% frame = fail lebih besar tanpa gerakan lebih licin (perlu interpolation, belum disokong).
 
 **Tahap kualiti (CRF, lebih kecil = lebih bagus & lebih besar):**
@@ -248,6 +250,7 @@ Ia cetak versi PowerShell, ketersediaan WinForms, laluan ffmpeg, laluan CLI, dan
 | `Copy mode is not safe` | Klip berbeza codec/resolusi/pix_fmt/audio → guna `-Mode hevc`. Perbezaan **fps sahaja** cuma amaran (kecuali `-StrictFps`) |
 | `Input file not found` | Fail dipadam / dipindah selepas dimasukkan. GUI akan tanya buang dari senarai; CLI berhenti dengan nama fail |
 | `Output file is also listed as input` | Output sama dengan salah satu input → tukar nama output |
+| Hasil main **terlalu laju/lambat** | Copy pada klip berbeza fps/timebase (biasa DJI). Guna `-Mode hevc` — sejak v0.3.0 encode guna **concat filter** yang betul-betul re-time setiap klip |
 | `Cannot bind argument to parameter 'Path' because it is an empty string` | Pepijat lama GUI (dibetulkan v0.2.0) - update pemasang |
 | `SelectionMode ... 'Extended'` | Pepijat lama GUI (dibetulkan v0.2.0: `MultiExtended`) |
 | Encode lambat | Guna `-Encoder nvenc` (NVIDIA) atau mod `Copy` kalau klip sudah seragam. CPU x265 memang 10–30× lebih lambat |

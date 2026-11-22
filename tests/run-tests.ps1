@@ -339,7 +339,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.2.2'
+    Assert-Equal ($r -join '').Trim() '0.3.0'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {
@@ -406,6 +406,25 @@ Check 'StrictFps: fps berbeza ditolak' {
         $r = Invoke-Cli -Files @($a, $b) -Out (Join-Path $tmp 'o.mp4') -Mode copy -StrictFps
         Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal'
         Assert-True (($r -join "`n") -match 'not safe') "message: $($r -join ' | ')"
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Check 'encode: durasi output = jumlah klip (tiada speed-up)' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-fix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'; $c = Join-Path $tmp 'c.mp4'
+        New-TestClip -Path $a -Color red -Seconds 2
+        & ffmpeg -v error -y -f lavfi -i "color=c=green:s=640x480:r=25:d=2" -f lavfi -i "sine=f=660:d=2" `
+                 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac $b
+        New-TestClip -Path $c -Color blue -Seconds 1
+        $out = Join-Path $tmp 'o.mp4'
+        $r = Invoke-Cli -Files @($a, $b, $c) -Out $out -Mode hevc -Quality small -Preset ultrafast
+        Assert-Equal $LASTEXITCODE 0 ($r -join ' | ')
+        $dur = [double] (& ffprobe -v error -show_entries format=duration -of csv=p=0 $out)
+        Assert-True ($dur -gt 4.7 -and $dur -lt 5.3) "durasi $dur (jangka ~5s)"
     }
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
