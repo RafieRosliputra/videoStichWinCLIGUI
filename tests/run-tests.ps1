@@ -339,7 +339,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.3.0'
+    Assert-Equal ($r -join '').Trim() '0.3.1'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {
@@ -375,20 +375,37 @@ Check 'output tidak boleh sama dengan input' {
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
-Check 'copy: fps berbeza diteruskan dengan amaran' {
+Check 'copy: fps beza besar (30 vs 25) ditolak' {
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
-    $tmp = Join-Path $TmpBase ('vs-fpscopy-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $tmp = Join-Path $TmpBase ('vs-fpsbig-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
         $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'
         New-TestClip -Path $a -Color red -Seconds 1
         & ffmpeg -v error -y -f lavfi -i "color=c=blue:s=320x240:r=25:d=1" -f lavfi -i "sine=f=440:d=1" `
                  -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac $b
+        $r = Invoke-Cli -Files @($a, $b) -Out (Join-Path $tmp 'o.mp4') -Mode copy
+        $txt = ($r -join "`n")
+        Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal (fps 30 vs 25)'
+        Assert-True ($txt -match 'not safe') "message: $txt"
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $tmp 'o.mp4'))) 'output tak sepatutnya wujud'
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Check 'copy: fps beza kecil (30 vs 29.97) diteruskan' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-fpssmall-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'
+        New-TestClip -Path $a -Color red -Seconds 1
+        & ffmpeg -v error -y -f lavfi -i "color=c=blue:s=320x240:r=30000/1001:d=1" -f lavfi -i "sine=f=440:d=1" `
+                 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac $b
         $out = Join-Path $tmp 'o.mp4'
         $r = Invoke-Cli -Files @($a, $b) -Out $out -Mode copy
         $txt = ($r -join "`n")
         Assert-Equal $LASTEXITCODE 0 $txt
-        Assert-True ($txt -match 'fps differs|fps difference|cannot change') "output: $txt"
         Assert-True (Test-Path -LiteralPath $out) 'output tiada'
     }
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }

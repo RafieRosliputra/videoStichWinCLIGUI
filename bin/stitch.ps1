@@ -74,7 +74,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.3.0'
+$script:AppVersion = '0.3.1'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -220,9 +220,12 @@ function Test-Uniform {
         if ($i.VCodec -ne $ref.VCodec) { [void] $issues.Add("$name : codec video $($i.VCodec) != $($ref.VCodec)") }
         if ($i.Width -ne $ref.Width -or $i.Height -ne $ref.Height) { [void] $issues.Add("$name : resolusi $($i.Width)x$($i.Height) != $($ref.Width)x$($ref.Height)") }
         if ($i.Fps -gt 0 -and $ref.Fps -gt 0 -and [Math]::Abs($i.Fps - $ref.Fps) -gt 0.05) {
-            # fps = isu "lembut": concat copy masih biasanya berfungsi (metadata DJI
-            # sering salah). Ia jadi keras hanya dengan -StrictFps.
-            [void] $issues.Add("SOFT: $name : fps $($i.Fps) != $($ref.Fps)")
+            # Beza kecil (<2%, cth 59.94 vs 60) = lembut: copy masih selamat.
+            # Beza besar (cth 100 vs 59.94) = keras: concat copy memampatkan
+            # timeline -> output main terlalu laju. Wajib encode.
+            $ratio = [Math]::Max($i.Fps, $ref.Fps) / [Math]::Min($i.Fps, $ref.Fps)
+            if ($ratio -gt 1.02) { [void] $issues.Add("$name : fps $($i.Fps) != $($ref.Fps)") }
+            else { [void] $issues.Add("SOFT: $name : fps $($i.Fps) != $($ref.Fps)") }
         }
         if ($i.PixFmt -ne $ref.PixFmt) { [void] $issues.Add("$name : pix_fmt $($i.PixFmt) != $($ref.PixFmt)") }
         if ($i.HasAudio -ne $ref.HasAudio) { [void] $issues.Add("$name : audio ada/tidak tak seragam") }
@@ -583,11 +586,25 @@ function Invoke-Stitch {
     $sw.Stop()
     Write-Host ''
 
-    # ExitCode boleh null sejurus selepas proses tamat (race Windows) - tunggu & refresh.
-    if ($null -eq $proc.ExitCode) { try { $proc.WaitForExit() } catch { } }
+    # ExitCode boleh null walaupun proses sudah tamat. Tunggu, refresh, cuba beberapa kali.
+    try { $proc.WaitForExit(5000) | Out-Null } catch { }
     try { $proc.Refresh() } catch { }
     $code = $proc.ExitCode
-    if ($null -eq $code) { $code = -999 }
+    for ($try = 0; $try -lt 5 -and $null -eq $code; $try++) {
+        Start-Sleep -Milliseconds 200
+        try { $proc.Refresh() } catch { }
+        $code = $proc.ExitCode
+    }
+    if ($null -eq $code) {
+        # Infer: ffmpeg tulis "progress=end" hanya bila ia tamat dengan terkawal.
+        $ended = $false
+        try { $ended = (Select-String -LiteralPath $Progress -Pattern '^progress=end$' -Quiet) } catch { }
+        if ($ended -and (Test-Path -LiteralPath $Out)) {
+            $code = 0
+            Write-Warning 'ffmpeg exit code unavailable; assumed success (progress=end + output exists).'
+        }
+        else { $code = -999 }
+    }
 
     if ($code -ne 0) {
         $err = if ((Test-Path -LiteralPath $Log) -and (Get-Item -LiteralPath $Log).Length -gt 0) {

@@ -75,7 +75,7 @@ explorer "$env:LOCALAPPDATA\Programs\videoStitch"
 
 ### 3a-alt. Tanpa installer (portable)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.3.0.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.3.1.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -250,7 +250,7 @@ Ia cetak versi PowerShell, ketersediaan WinForms, laluan ffmpeg, laluan CLI, dan
 | `Copy mode is not safe` | Klip berbeza codec/resolusi/pix_fmt/audio → guna `-Mode hevc`. Perbezaan **fps sahaja** cuma amaran (kecuali `-StrictFps`) |
 | `Input file not found` | Fail dipadam / dipindah selepas dimasukkan. GUI akan tanya buang dari senarai; CLI berhenti dengan nama fail |
 | `Output file is also listed as input` | Output sama dengan salah satu input → tukar nama output |
-| Hasil main **terlalu laju/lambat** | Copy pada klip berbeza fps/timebase (biasa DJI). Guna `-Mode hevc` — sejak v0.3.0 encode guna **concat filter** yang betul-betul re-time setiap klip |
+| Hasil main **terlalu laju/lambat** | Copy pada klip berbeza fps/timebase. Sejak v0.3.1, Copy **menolak** beza fps >2% dengan mesej `not safe`. Guna `-Mode hevc` — encode guna concat filter yang re-time setiap klip |
 | `Cannot bind argument to parameter 'Path' because it is an empty string` | Pepijat lama GUI (dibetulkan v0.2.0) - update pemasang |
 | `SelectionMode ... 'Extended'` | Pepijat lama GUI (dibetulkan v0.2.0: `MultiExtended`) |
 | Encode lambat | Guna `-Encoder nvenc` (NVIDIA) atau mod `Copy` kalau klip sudah seragam. CPU x265 memang 10–30× lebih lambat |
