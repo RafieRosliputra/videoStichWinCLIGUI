@@ -37,7 +37,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $isWin = ($env:OS -eq 'Windows_NT')
-$Version = '0.1.7'
+$Version = '0.1.8'
 
 if (-not $isWin -and -not $DryRun) { throw 'Pemasang ini untuk Windows sahaja.' }
 
@@ -222,6 +222,9 @@ if ($isWin -and -not $DryRun) {
 }
 if (-not $DryRun) { New-Item -ItemType Directory -Force -Path $Target | Out-Null }
 Copy-Payload
+if (-not $DryRun) {
+    [System.IO.File]::WriteAllText((Join-Path $Target 'version.txt'), $Version, [System.Text.Encoding]::ASCII)
+}
 Say '       ok' 'Green'
 
 Step 3 'Compile .exe'

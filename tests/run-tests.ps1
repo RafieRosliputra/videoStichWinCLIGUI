@@ -299,6 +299,11 @@ Check 'cantuman dengan apostrof dalam nama fail' {
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+Check 'CLI -Version cetak versi' {
+    $r = & $psExe -NoProfile -File $cli -Version
+    Assert-Equal ($r -join '').Trim() '0.1.8'
+}
+
 Check 'senarai fail dalam satu argumen koma (-File)' {
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
     $tmp = Join-Path $TmpBase ('vs-comma-' + [guid]::NewGuid().ToString('N').Substring(0, 8))

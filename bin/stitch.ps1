@@ -68,10 +68,13 @@ param(
     [switch]   $Install,
     [string]   $Progress,
     [string]   $Log,
-    [string]   $State
+    [string]   $State,
+    [switch]   $Version
 )
 
 $ErrorActionPreference = 'Stop'
+$script:AppVersion = '0.1.8'
+if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
 
@@ -408,6 +411,7 @@ function Invoke-Stitch {
         param([string] $status, [double] $total)
         $lines = @()
         if ($total -gt 0) { $lines += ('TOTAL=' + $total.ToString([Globalization.CultureInfo]::InvariantCulture)) }
+        $lines += ('VERSION=' + $script:AppVersion)
         $lines += ('MODE=' + $Mode)
         if ($Mode -ne 'copy') { $lines += ('ENCODER=' + $encName) }
         if ($Fps -gt 0) { $lines += ('FPS=' + $Fps) }

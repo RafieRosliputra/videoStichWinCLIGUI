@@ -193,7 +193,7 @@ $script:Qualities = @(
 # --------------------------------------------------------------- kawalan ----
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'videoStitch - video stitcher (Windows)'
+$form.Text = 'videoStitch v0.1.8 - video stitcher (Windows)'
 $form.Size = New-Object System.Drawing.Size(1040, 760)
 $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
 $form.StartPosition = 'CenterScreen'
@@ -693,7 +693,15 @@ $script:Timer.Add_Tick({
 $form.Add_FormClosing({ $script:Timer.Stop(); $script:Timer.Dispose() })
 
 $cmbMode.SelectedIndex = 0
-if ($script:DetectedGpu) { $lblStatus.Text = "GPU detected: $($script:DetectedGpu)" }
+$script:EngineVersion = ''
+$verFile = Join-Path $script:RepoRoot 'version.txt'
+if (Test-Path -LiteralPath $verFile) {
+    try { $script:EngineVersion = (Get-Content -LiteralPath $verFile -Raw).Trim() } catch { }
+}
+if ($script:EngineVersion) {
+    $lblStatus.Text = "Engine v$($script:EngineVersion)" + $(if ($script:DetectedGpu) { "  |  GPU detected: $($script:DetectedGpu)" } else { "" })
+}
+elseif ($script:DetectedGpu) { $lblStatus.Text = "GPU detected: $($script:DetectedGpu)" }
 Update-Preview
 
 try {
