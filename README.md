@@ -75,7 +75,7 @@ explorer "$env:LOCALAPPDATA\Programs\videoStitch"
 
 ### 3a-alt. Tanpa installer (portable)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.3.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.4.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -125,6 +125,8 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\bin\stitch.ps1 -Files
 | `-Out` | Fail output `.mp4` |
 | `-Mode` | `copy` (default) · `hevc` · `h264` |
 | `-Quality` | `high` (CRF 20) · `balanced` (CRF 23, default) · `small` (CRF 28) |
+| `-Encoder` | `auto` (default) · `nvenc` · `qsv` · `amf` · `mf` · `cpu` |
+| `-GpuDevice` | Indeks GPU NVIDIA (0 = pertama). Default 0 |
 | `-Preset` | x264/x265 preset, default `medium` |
 | `-Crf` | Override CRF terus (menang atas `-Quality`) |
 | `-Progress` `-Log` `-State` | Fail kerja (GUI guna ini) |
@@ -140,6 +142,30 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\bin\stitch.ps1 -Files
 | `copy` | `-c copy` | Semua klip **seragam** (codec, resolusi, fps, pix_fmt, audio) | ~had disk (GB/s) |
 | `hevc` | `libx265` + CRF | Nak fail kecil, klip tak seragam | re-encode, 10–30× lebih lambat |
 | `h264` | `libx264` + CRF | Keserasian maksimum (player lama) | re-encode |
+
+**Enkoder:**
+
+| `-Encoder` | Enjin | Guna |
+|---|---|---|
+| `auto` (default) | uji nvenc → qsv → amf → mf | pilih GPU pertama yang betul-betul jalan; fallback CPU |
+| `nvenc` | `hevc_nvenc` / `h264_nvenc` | NVIDIA GTX 1000+ / RTX. **RTX 3060 = NVENC gen 7, sangat laju** |
+| `qsv` | `hevc_qsv` / `h264_qsv` | Intel iGPU/Arc (i9-12900 ada UHD 770) |
+| `amf` | `hevc_amf` / `h264_amf` | AMD RDNA |
+| `mf` | `hevc_mf` / `h264_mf` | Media Foundation (semua GPU Windows, kualiti paling kasar) |
+| `cpu` | `libx265` / `libx264` | paling serasi, paling lambat |
+
+**Pilih GPU dalam GUI:** dropdown enkoder dibina daripada GPU yang betul-betul dikesan pada mesin kau — contoh pada PC kau akan nampak:
+
+```
+Auto (GPU kalau ada)
+GPU: NVIDIA GeForce RTX 3060 (NVENC)
+GPU: Intel(R) UHD Graphics 770 (QSV)
+CPU (x265/x264)
+```
+
+Pilih baris GPU → GUI hantar `-Encoder nvenc -GpuDevice 0`. Kalau ada 2 kad NVIDIA, setiap satu disenaraikan dengan indeksnya. Nama GPU dikesan melalui `nvidia-smi` + WMI `Win32_VideoController`.
+
+Pemetaan kualiti per enjin: CPU `-crf`, NVENC `-cq` (CQ = CRF−1), QSV `-global_quality`, AMF `-qp_i/-qp_p`, MF `-b:v` (10M/6M/3M).
 
 **Tahap kualiti (CRF, lebih kecil = lebih bagus & lebih besar):**
 
@@ -217,6 +243,7 @@ Ia cetak versi PowerShell, ketersediaan WinForms, laluan ffmpeg, laluan CLI, dan
 |---|---|
 | `ffmpeg tidak dijumpai` | GUI akan tawar auto-pasang; atau `winget install -e --id Gyan.FFmpeg`, kemudian buka semula terminal |
 | `Mod copy tidak selamat` | Klip berbeza codec/resolusi/fps → guna `-Mode hevc` |
+| Encode lambat | Guna `-Encoder nvenc` (NVIDIA) atau mod `Copy` kalau klip sudah seragam. CPU x265 memang 10–30× lebih lambat |
 | Progress bar tak bergerak | Fail `ffprogress.txt` hanya ditulis selepas ffmpeg mula encode; `copy` sangat laju jadi bar mungkin terus 100% |
 | GUI tak buka (tiada tetingkap) | Jalankan `gui.cmd`; jika masih gagal, jalankan `powershell -STA -File gui\VideoStitchGUI.ps1` dan baca ralat, atau `-SelfTest` untuk semakan persekitaran |
 | Job tamat bila GUI ditutup | Tidak sepatutnya: job dalam proses `powershell.exe` sendiri. Semak `%TEMP%\VideoStitch\...\state.txt` |

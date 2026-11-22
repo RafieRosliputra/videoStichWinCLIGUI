@@ -19,7 +19,7 @@
 param([switch] $SelfTest)   # -SelfTest: semak persekitaran tanpa buka tetingkap
 
 if ($SelfTest) {
-    Write-Host 'videoStitch GUI - semakan persekitaran' -ForegroundColor Cyan
+    Write-Host 'videoStitch GUI - environment check' -ForegroundColor Cyan
     Write-Host ("PowerShell : {0}" -f $PSVersionTable.PSVersion)
     Write-Host ("Windows    : {0}" -f ([bool]($env:OS -eq 'Windows_NT')))
     $wf = $true
@@ -29,16 +29,16 @@ if ($SelfTest) {
     if ($ff) {
         $ver = (& $ff.Source -version 2>$null | Select-Object -First 1)
         Write-Host ("ffmpeg     : {0} ({1})" -f $ff.Source, $ver) -ForegroundColor Green
-    } else { Write-Host 'ffmpeg     : TIDAK DIJUMPAI - winget install -e --id Gyan.FFmpeg' -ForegroundColor Red }
+    } else { Write-Host 'ffmpeg     : NOT FOUND - winget install -e --id Gyan.FFmpeg' -ForegroundColor Red }
     $cli = Join-Path (Split-Path -Parent $PSScriptRoot) 'bin\stitch.ps1'
     if (-not (Test-Path -LiteralPath $cli)) { $cli = Join-Path (Split-Path -Parent $PSScriptRoot) 'bin/stitch.ps1' }
     Write-Host ("CLI        : {0} ({1})" -f $cli, (Test-Path -LiteralPath $cli))
     $tmp = [IO.Path]::GetTempPath()
     $w = $true
     try { $f = Join-Path $tmp '.vs-write-test'; Set-Content -LiteralPath $f 'x'; Remove-Item -LiteralPath $f -Force } catch { $w = $false }
-    Write-Host ("TEMP tulis : {0} ({1})" -f $w, $tmp)
-    if ($wf -and $ff -and $w) { Write-Host 'STATUS: sedia' -ForegroundColor Green; exit 0 }
-    Write-Host 'STATUS: ada masalah di atas' -ForegroundColor Yellow
+    Write-Host ("TEMP write : {0} ({1})" -f $w, $tmp)
+    if ($wf -and $ff -and $w) { Write-Host 'STATUS: ready' -ForegroundColor Green; exit 0 }
+    Write-Host 'STATUS: issues above' -ForegroundColor Yellow
     exit 1
 }
 
@@ -98,16 +98,16 @@ function Get-FFmpegPath {
 function Install-FFmpeg {
     # Opt-in: tanya dulu. Tidak memasang senyap.
     $ans = [System.Windows.Forms.MessageBox]::Show(
-        "ffmpeg tidak dijumpai.`n`nPasang sekarang guna winget (Gyan.FFmpeg)?`n`nTetingkap PowerShell akan dibuka untuk kerja pemasangan.",
-        'ffmpeg tiada', 'YesNo', 'Question')
+        "ffmpeg was not found.`n`nInstall it now with winget (Gyan.FFmpeg)?`n`nA PowerShell window will open to run the install.",
+        'ffmpeg missing', 'YesNo', 'Question')
     if ($ans -ne 'Yes') { return }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        [System.Windows.Forms.MessageBox]::Show('winget tiada. Pasang "App Installer" dari Microsoft Store dahulu.', 'winget tiada', 'OK', 'Warning') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show('winget is not available. Install "App Installer" from the Microsoft Store first.', 'winget missing', 'OK', 'Warning') | Out-Null
         return
     }
     $arg = '-NoLogo -NoProfile -NoExit -Command "winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements"'
     Start-Process -FilePath 'powershell.exe' -ArgumentList $arg | Out-Null
-    [System.Windows.Forms.MessageBox]::Show('Tetingkap pemasangan dibuka. Selepas siap, tekan Mula semula.', 'Memasang ffmpeg', 'OK', 'Information') | Out-Null
+    [System.Windows.Forms.MessageBox]::Show('Install window opened. When it finishes, press Run again.', 'Installing ffmpeg', 'OK', 'Information') | Out-Null
 }
 
 function Quote-PS { param([string] $s) return "'" + $s.Replace("'", "''") + "'" }
@@ -135,20 +135,54 @@ $script:Total    = 0.0
 $script:Timer    = New-Object System.Windows.Forms.Timer
 
 $script:Modes = @(
-    [pscustomobject]@{ Label = 'Copy (sifar encode, paling laju)'; Value = 'copy' },
+    [pscustomobject]@{ Label = 'Copy (no re-encode, fastest)'; Value = 'copy' },
     [pscustomobject]@{ Label = 'HEVC / H.265 (x265)';              Value = 'hevc' },
     [pscustomobject]@{ Label = 'H.264 (x264, fallback)';           Value = 'h264' }
 )
+# Senarai pilihan enkoder/gpu - dikesan pada mesin ini bila GUI dibuka.
+$script:Encoders = [System.Collections.Generic.List[object]]::new()
+$script:Encoders.Add([pscustomobject]@{ Label = 'Auto (GPU kalau ada)'; Kind = 'auto'; Device = 0 })
+$detected = @()
+try {
+    $nv = @()
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        $nv = @(& nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Where-Object { $_ -and $_.Trim() })
+    }
+    for ($i = 0; $i -lt $nv.Count; $i++) {
+        $script:Encoders.Add([pscustomobject]@{ Label = ("GPU: {0} (NVENC)" -f $nv[$i].Trim()); Kind = 'nvenc'; Device = $i })
+        $detected += $nv[$i].Trim()
+    }
+    foreach ($v in @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)) {
+        if ($v.Name -match 'Intel' -and -not ($script:Encoders | Where-Object { $_.Kind -eq 'qsv' })) {
+            $script:Encoders.Add([pscustomobject]@{ Label = ("GPU: {0} (QSV)" -f $v.Name); Kind = 'qsv'; Device = 0 })
+            $detected += $v.Name
+        }
+        elseif ($v.Name -match 'AMD|Radeon' -and -not ($script:Encoders | Where-Object { $_.Kind -eq 'amf' })) {
+            $script:Encoders.Add([pscustomobject]@{ Label = ("GPU: {0} (AMF)" -f $v.Name); Kind = 'amf'; Device = 0 })
+            $detected += $v.Name
+        }
+    }
+}
+catch { }
+if (-not ($script:Encoders | Where-Object { $_.Kind -eq 'nvenc' })) {
+    $script:Encoders.Add([pscustomobject]@{ Label = 'GPU: NVIDIA (NVENC)'; Kind = 'nvenc'; Device = 0 })
+}
+if (-not ($script:Encoders | Where-Object { $_.Kind -eq 'qsv' })) {
+    $script:Encoders.Add([pscustomobject]@{ Label = 'GPU: Intel (QSV)'; Kind = 'qsv'; Device = 0 })
+}
+$script:Encoders.Add([pscustomobject]@{ Label = 'CPU (x265/x264)'; Kind = 'cpu'; Device = 0 })
+$script:DetectedGpu = ($detected -join ', ')
+
 $script:Qualities = @(
-    [pscustomobject]@{ Label = 'Tinggi (CRF 20)';    Value = 'high' },
-    [pscustomobject]@{ Label = 'Seimbang (CRF 23)';  Value = 'balanced' },
-    [pscustomobject]@{ Label = 'Kecil (CRF 28)';     Value = 'small' }
+    [pscustomobject]@{ Label = 'High (CRF 20)';      Value = 'high' },
+    [pscustomobject]@{ Label = 'Balanced (CRF 23)';  Value = 'balanced' },
+    [pscustomobject]@{ Label = 'Small (CRF 28)';     Value = 'small' }
 )
 
 # --------------------------------------------------------------- kawalan ----
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'videoStitch - cantum video (Windows)'
+$form.Text = 'videoStitch - video stitcher (Windows)'
 $form.Size = New-Object System.Drawing.Size(1040, 760)
 $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
 $form.StartPosition = 'CenterScreen'
@@ -156,7 +190,7 @@ $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.AllowDrop = $true
 
 $lblHint = New-Object System.Windows.Forms.Label
-$lblHint.Text = 'Lepas (drag & drop) fail video di sini. Susunan senarai = susunan cantuman.'
+$lblHint.Text = 'Drag & drop video files here. List order = stitch order.'
 $lblHint.Location = New-Object System.Drawing.Point(12, 10)
 $lblHint.Size = New-Object System.Drawing.Size(760, 20)
 $form.Controls.Add($lblHint)
@@ -171,37 +205,37 @@ $list.IntegralHeight = $false
 $form.Controls.Add($list)
 
 $btnAdd = New-Object System.Windows.Forms.Button
-$btnAdd.Text = 'Tambah fail...'
+$btnAdd.Text = 'Add files...'
 $btnAdd.Location = New-Object System.Drawing.Point(724, 34)
 $btnAdd.Size = New-Object System.Drawing.Size(292, 30)
 $form.Controls.Add($btnAdd)
 
 $btnUp = New-Object System.Windows.Forms.Button
-$btnUp.Text = 'Naik'
+$btnUp.Text = 'Up'
 $btnUp.Location = New-Object System.Drawing.Point(724, 70)
 $btnUp.Size = New-Object System.Drawing.Size(70, 28)
 $form.Controls.Add($btnUp)
 
 $btnDown = New-Object System.Windows.Forms.Button
-$btnDown.Text = 'Turun'
+$btnDown.Text = 'Down'
 $btnDown.Location = New-Object System.Drawing.Point(800, 70)
 $btnDown.Size = New-Object System.Drawing.Size(70, 28)
 $form.Controls.Add($btnDown)
 
 $btnDel = New-Object System.Windows.Forms.Button
-$btnDel.Text = 'Buang'
+$btnDel.Text = 'Remove'
 $btnDel.Location = New-Object System.Drawing.Point(876, 70)
 $btnDel.Size = New-Object System.Drawing.Size(60, 28)
 $form.Controls.Add($btnDel)
 
 $btnClear = New-Object System.Windows.Forms.Button
-$btnClear.Text = 'Kosong'
+$btnClear.Text = 'Clear'
 $btnClear.Location = New-Object System.Drawing.Point(942, 70)
 $btnClear.Size = New-Object System.Drawing.Size(74, 28)
 $form.Controls.Add($btnClear)
 
 $btnSort = New-Object System.Windows.Forms.Button
-$btnSort.Text = 'Susun ikut nama'
+$btnSort.Text = 'Sort by name'
 $btnSort.Location = New-Object System.Drawing.Point(724, 104)
 $btnSort.Size = New-Object System.Drawing.Size(292, 28)
 $form.Controls.Add($btnSort)
@@ -218,19 +252,19 @@ $txtOut.Size = New-Object System.Drawing.Size(760, 24)
 $grpOut.Controls.Add($txtOut)
 
 $btnFolder = New-Object System.Windows.Forms.Button
-$btnFolder.Text = 'Folder target...'
+$btnFolder.Text = 'Output folder...'
 $btnFolder.Location = New-Object System.Drawing.Point(778, 22)
 $btnFolder.Size = New-Object System.Drawing.Size(110, 28)
 $grpOut.Controls.Add($btnFolder)
 
 $btnName = New-Object System.Windows.Forms.Button
-$btnName.Text = 'Nama fail...'
+$btnName.Text = 'File name...'
 $btnName.Location = New-Object System.Drawing.Point(894, 22)
 $btnName.Size = New-Object System.Drawing.Size(100, 28)
 $grpOut.Controls.Add($btnName)
 
 $grpMode = New-Object System.Windows.Forms.GroupBox
-$grpMode.Text = 'Mod & kualiti'
+$grpMode.Text = 'Mode & quality'
 $grpMode.Location = New-Object System.Drawing.Point(12, 414)
 $grpMode.Size = New-Object System.Drawing.Size(1004, 64)
 $form.Controls.Add($grpMode)
@@ -238,36 +272,44 @@ $form.Controls.Add($grpMode)
 $cmbMode = New-Object System.Windows.Forms.ComboBox
 $cmbMode.DropDownStyle = 'DropDownList'
 $cmbMode.Location = New-Object System.Drawing.Point(10, 24)
-$cmbMode.Size = New-Object System.Drawing.Size(300, 24)
+$cmbMode.Size = New-Object System.Drawing.Size(236, 24)
 foreach ($m in $script:Modes) { [void] $cmbMode.Items.Add($m.Label) }
 $cmbMode.SelectedIndex = 0
 $grpMode.Controls.Add($cmbMode)
 
 $cmbQuality = New-Object System.Windows.Forms.ComboBox
 $cmbQuality.DropDownStyle = 'DropDownList'
-$cmbQuality.Location = New-Object System.Drawing.Point(320, 24)
-$cmbQuality.Size = New-Object System.Drawing.Size(200, 24)
+$cmbQuality.Location = New-Object System.Drawing.Point(254, 24)
+$cmbQuality.Size = New-Object System.Drawing.Size(160, 24)
 foreach ($q in $script:Qualities) { [void] $cmbQuality.Items.Add($q.Label) }
 $cmbQuality.SelectedIndex = 1
 $grpMode.Controls.Add($cmbQuality)
 
 $cmbPreset = New-Object System.Windows.Forms.ComboBox
 $cmbPreset.DropDownStyle = 'DropDownList'
-$cmbPreset.Location = New-Object System.Drawing.Point(530, 24)
-$cmbPreset.Size = New-Object System.Drawing.Size(150, 24)
+$cmbPreset.Location = New-Object System.Drawing.Point(422, 24)
+$cmbPreset.Size = New-Object System.Drawing.Size(120, 24)
 foreach ($p in @('veryfast', 'medium', 'slow')) { [void] $cmbPreset.Items.Add($p) }
 $cmbPreset.SelectedIndex = 1
 $grpMode.Controls.Add($cmbPreset)
 
+$cmbEncoder = New-Object System.Windows.Forms.ComboBox
+$cmbEncoder.DropDownStyle = 'DropDownList'
+$cmbEncoder.Location = New-Object System.Drawing.Point(550, 24)
+$cmbEncoder.Size = New-Object System.Drawing.Size(190, 24)
+foreach ($e in $script:Encoders) { [void] $cmbEncoder.Items.Add($e.Label) }
+$cmbEncoder.SelectedIndex = 0
+$grpMode.Controls.Add($cmbEncoder)
+
 $lblNote = New-Object System.Windows.Forms.Label
-$lblNote.Location = New-Object System.Drawing.Point(690, 27)
-$lblNote.Size = New-Object System.Drawing.Size(310, 22)
+$lblNote.Location = New-Object System.Drawing.Point(748, 27)
+$lblNote.Size = New-Object System.Drawing.Size(250, 22)
 $lblNote.ForeColor = [System.Drawing.Color]::DimGray
-$lblNote.Text = 'Kualiti/preset hanya untuk encode.'
+$lblNote.Text = 'Quality/preset apply when encoding only.'
 $grpMode.Controls.Add($lblNote)
 
 $lblCmd = New-Object System.Windows.Forms.Label
-$lblCmd.Text = 'Arahan CLI (boleh salin & jalankan sendiri)'
+$lblCmd.Text = 'CLI command (copy & run it yourself)'
 $lblCmd.Location = New-Object System.Drawing.Point(12, 486)
 $lblCmd.Size = New-Object System.Drawing.Size(400, 20)
 $form.Controls.Add($lblCmd)
@@ -283,20 +325,20 @@ $txtCmd.BackColor = [System.Drawing.Color]::WhiteSmoke
 $form.Controls.Add($txtCmd)
 
 $btnCmd = New-Object System.Windows.Forms.Button
-$btnCmd.Text = 'Jana arahan'
+$btnCmd.Text = 'Build command'
 $btnCmd.Location = New-Object System.Drawing.Point(12, 574)
 $btnCmd.Size = New-Object System.Drawing.Size(130, 30)
 $form.Controls.Add($btnCmd)
 
 $btnRun = New-Object System.Windows.Forms.Button
-$btnRun.Text = 'Mula  (buka PowerShell & jalankan)'
+$btnRun.Text = 'Run  (open PowerShell & start)'
 $btnRun.Location = New-Object System.Drawing.Point(150, 574)
 $btnRun.Size = New-Object System.Drawing.Size(300, 30)
 $btnRun.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($btnRun)
 
 $btnLog = New-Object System.Windows.Forms.Button
-$btnLog.Text = 'Buka folder job'
+$btnLog.Text = 'Open job folder'
 $btnLog.Location = New-Object System.Drawing.Point(458, 574)
 $btnLog.Size = New-Object System.Drawing.Size(150, 30)
 $btnLog.Enabled = $false
@@ -313,14 +355,14 @@ $form.Controls.Add($prg)
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Location = New-Object System.Drawing.Point(12, 646)
 $lblStatus.Size = New-Object System.Drawing.Size(1004, 22)
-$lblStatus.Text = 'Sedia.'
+$lblStatus.Text = 'Ready.'
 $form.Controls.Add($lblStatus)
 
 $lblFoot = New-Object System.Windows.Forms.Label
 $lblFoot.Location = New-Object System.Drawing.Point(12, 672)
 $lblFoot.Size = New-Object System.Drawing.Size(1004, 40)
 $lblFoot.ForeColor = [System.Drawing.Color]::DimGray
-$lblFoot.Text = "GUI boleh ditutup selepas tekan Mula; job diteruskan dalam tetingkap PowerShell. Log job di %TEMP%\VideoStitch."
+$lblFoot.Text = 'You can close this window after pressing Run; the job keeps running in its own PowerShell window. Job logs: %TEMP%\VideoStitch.'
 $form.Controls.Add($lblFoot)
 
 # ---------------------------------------------------------------- fungsi ----
@@ -349,7 +391,7 @@ function Add-FilesTo-List {
     if ($added -gt 0) {
         $script:Files = [System.Collections.Generic.List[string]]::new([string[]] (Sort-FilesNatural -Paths $script:Files.ToArray()))
         Update-List
-        $lblStatus.Text = "Tambah $added fail. Jumlah: $($script:Files.Count)."
+        $lblStatus.Text = "Added $added file(s). Total: $($script:Files.Count)."
         if (-not $txtOut.Text.Trim()) {
             $dir = Split-Path -Parent $script:Files[0]
             $txtOut.Text = Join-Path $dir 'out.mp4'
@@ -359,6 +401,7 @@ function Add-FilesTo-List {
 
 function Get-Mode { $script:Modes[$cmbMode.SelectedIndex].Value }
 function Get-Quality { $script:Qualities[$cmbQuality.SelectedIndex].Value }
+function Get-Encoder { return $script:Encoders[$cmbEncoder.SelectedIndex] }
 
 function Get-CliArgs {
     param([string[]] $Files, [string] $Out)
@@ -366,7 +409,10 @@ function Get-CliArgs {
     $parts += (($Files | ForEach-Object { Quote-PS $_ }) -join ',')
     $parts += @('-Out', (Quote-PS $Out), '-Mode', (Get-Mode))
     if ((Get-Mode) -ne 'copy') {
-        $parts += @('-Quality', (Get-Quality), '-Preset', $cmbPreset.SelectedItem.ToString())
+        $enc = Get-Encoder
+        $parts += @('-Quality', (Get-Quality), '-Encoder', $enc.Kind)
+        if ($enc.Kind -eq 'nvenc') { $parts += @('-GpuDevice', "$($enc.Device)") }
+        $parts += @('-Preset', $cmbPreset.SelectedItem.ToString())
     }
     if ($script:Running -and $script:JobDir) {
         $parts += @('-Progress', (Quote-PS (Join-Path $script:JobDir 'ffprogress.txt')))
@@ -377,7 +423,7 @@ function Get-CliArgs {
 }
 
 function Get-CommandPreview {
-    if ($script:Files.Count -eq 0) { return '(tiada fail)' }
+    if ($script:Files.Count -eq 0) { return '(no files)' }
     $out = if ($txtOut.Text.Trim()) { $txtOut.Text.Trim() } else { 'out.mp4' }
     $a = (Get-CliArgs -Files $script:Files.ToArray() -Out $out) -join ' '
     return "& '$script:CliPath' $a"
@@ -430,7 +476,7 @@ $form.Add_DragDrop($onDragDrop)
 
 $btnAdd.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
-    $dlg.Filter = 'Video|*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.ts;*.m2ts;*.webm;*.wmv;*.flv;*.mpg;*.mpeg|Semua fail|*.*'
+    $dlg.Filter = 'Video|*.mp4;*.mov;*.mkv;*.m4v;*.avi;*.ts;*.m2ts;*.webm;*.wmv;*.flv;*.mpg;*.mpeg|All files|*.*'
     $dlg.Multiselect = $true
     if ($dlg.ShowDialog() -eq 'OK') { Add-FilesTo-List -Paths $dlg.FileNames; Update-Preview }
 })
@@ -467,16 +513,16 @@ $btnDel.Add_Click({
     Update-List; Update-Preview
 })
 
-$btnClear.Add_Click({ $script:Files.Clear(); Update-List; Update-Preview; $lblStatus.Text = 'Senarai kosong.' })
+$btnClear.Add_Click({ $script:Files.Clear(); Update-List; Update-Preview; $lblStatus.Text = 'List cleared.' })
 
 $btnSort.Add_Click({
     $script:Files = [System.Collections.Generic.List[string]]::new([string[]] (Sort-FilesNatural -Paths $script:Files.ToArray()))
-    Update-List; Update-Preview; $lblStatus.Text = 'Disusun ikut nama (natural).'
+    Update-List; Update-Preview; $lblStatus.Text = 'Sorted by name (natural).'
 })
 
 $btnFolder.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dlg.Description = 'Pilih folder target output'
+    $dlg.Description = 'Select output folder'
     if ($dlg.ShowDialog() -eq 'OK') {
         $name = 'out.mp4'
         if ($txtOut.Text.Trim()) { $name = Split-Path -Leaf $txtOut.Text.Trim() }
@@ -488,7 +534,7 @@ $btnFolder.Add_Click({
 
 $btnName.Add_Click({
     $dlg = New-Object System.Windows.Forms.SaveFileDialog
-    $dlg.Filter = 'MP4|*.mp4|Semua fail|*.*'
+    $dlg.Filter = 'MP4|*.mp4|All files|*.*'
     $dlg.FileName = 'out.mp4'
     if ($txtOut.Text.Trim()) { $dlg.InitialDirectory = Split-Path -Parent $txtOut.Text.Trim(); $dlg.FileName = Split-Path -Leaf $txtOut.Text.Trim() }
     if ($dlg.ShowDialog() -eq 'OK') { $txtOut.Text = $dlg.FileName; Update-Preview }
@@ -498,14 +544,21 @@ $cmbMode.Add_SelectedIndexChanged({
     $isCopy = (Get-Mode) -eq 'copy'
     $cmbQuality.Enabled = -not $isCopy
     $cmbPreset.Enabled = -not $isCopy
-    $lblNote.Text = if ($isCopy) { 'Copy: semua klip mesti codec/resolusi/fps sama.' } else { 'Kualiti/preset hanya untuk encode.' }
+    $lblNote.Text = if ($isCopy) { 'Copy: all clips must share codec/resolution/fps.' } else { 'Quality/preset apply when encoding only.' }
     Update-Preview
 })
 $cmbQuality.Add_SelectedIndexChanged({ Update-Preview })
 $cmbPreset.Add_SelectedIndexChanged({ Update-Preview })
+$cmbEncoder.Add_SelectedIndexChanged({
+    $encSel = Get-Encoder
+    $lblNote.Text = if ($encSel.Kind -eq 'cpu') { 'CPU: most compatible, slowest.' }
+                    elseif ($encSel.Kind -eq 'auto') { 'Auto: try GPU, fall back to CPU.' }
+                    else { 'GPU: fast; quality via CQ/bitrate.' }
+    Update-Preview
+})
 $txtOut.Add_TextChanged({ Update-Preview })
 
-$btnCmd.Add_Click({ Update-Preview; $lblStatus.Text = 'Arahan dijana (lihat kotak arahan).' })
+$btnCmd.Add_Click({ Update-Preview; $lblStatus.Text = 'Command generated (see the command box).' })
 
 $btnLog.Add_Click({ if ($script:JobDir -and (Test-Path -LiteralPath $script:JobDir)) { Start-Process explorer.exe -ArgumentList ("`"{0}`"" -f $script:JobDir) } })
 
@@ -513,19 +566,19 @@ $btnLog.Add_Click({ if ($script:JobDir -and (Test-Path -LiteralPath $script:JobD
 
 $btnRun.Add_Click({
     try {
-        if ($script:Files.Count -lt 1) { throw 'Tambah sekurang-kurangnya 1 fail video.' }
+        if ($script:Files.Count -lt 1) { throw 'Add at least one video file.' }
         $out = $txtOut.Text.Trim()
-        if (-not $out) { throw 'Tetapkan folder target / nama fail output.' }
+        if (-not $out) { throw 'Set an output folder / file name first.' }
         if (-not $out.ToLowerInvariant().EndsWith('.mp4')) { $out += '.mp4'; $txtOut.Text = $out }
         $outDir = Split-Path -Parent $out
         if ($outDir -and -not (Test-Path -LiteralPath $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 
-        if (-not (Test-Path -LiteralPath $script:CliPath)) { throw "CLI tidak dijumpai: $script:CliPath" }
+        if (-not (Test-Path -LiteralPath $script:CliPath)) { throw "CLI not found: $script:CliPath" }
         $ff = Get-FFmpegPath
         if (-not $ff) {
             Install-FFmpeg
             $script:Running = $false
-            $lblStatus.Text = 'ffmpeg belum tersedia. Pasang dahulu, kemudian tekan Mula semula.'
+            $lblStatus.Text = 'ffmpeg is still missing. Install it, then press Run again.'
             return
         }
 
@@ -544,8 +597,8 @@ $btnRun.Add_Click({
 & '$script:CliPath' $argsLine
 `$code = `$LASTEXITCODE
 Write-Host ''
-if (`$code -ne 0) { Write-Host "Job TAMAT dengan ralat (rc=`$code). Log: $($script:JobDir)\ffmpeg.log" -ForegroundColor Red }
-else { Write-Host "Job SIAP: $out" -ForegroundColor Green }
+if (`$code -ne 0) { Write-Host "Job FAILED (rc=`$code). Log: $($script:JobDir)\ffmpeg.log" -ForegroundColor Red }
+else { Write-Host "Job DONE: $out" -ForegroundColor Green }
 # 'exit' dalam skrip yang dipanggil (&) hanya tamatkan skrip itu, bukan sesi -
 # jadi exit code mesti dihantar secara eksplisit.
 exit `$code
@@ -554,7 +607,7 @@ exit `$code
 
         $txtCmd.Text = Get-CommandPreview
         $prg.Value = 0
-        $lblStatus.Text = 'Menjalankan job dalam tetingkap PowerShell baru...'
+        $lblStatus.Text = 'Starting job in a new PowerShell window...'
 
         $psArgs = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -NoExit -File "{0}"' -f $jobFile
         Start-Process -FilePath 'powershell.exe' -ArgumentList $psArgs -WorkingDirectory $script:JobDir | Out-Null
@@ -564,8 +617,8 @@ exit `$code
     }
     catch {
         $script:Running = $false
-        [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Ralat', 'OK', 'Warning') | Out-Null
-        $lblStatus.Text = 'Ralat: ' + $_.Exception.Message
+        [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Error', 'OK', 'Warning') | Out-Null
+        $lblStatus.Text = 'Error: ' + $_.Exception.Message
     }
 })
 
@@ -578,18 +631,18 @@ $script:Timer.Add_Tick({
     if ($pct -gt 0) { $prg.Value = [int]($pct * 10) }
     $st = if ($state.ContainsKey('STATUS')) { $state['STATUS'] } else { 'PROBE' }
     switch ($st) {
-        'PROBE'   { $lblStatus.Text = 'Probe klip...' }
-        'RUNNING' { $lblStatus.Text = ('Bekerja... {0:0.0}%  (GUI boleh ditutup)' -f $pct) }
+        'PROBE'   { $lblStatus.Text = 'Probing clips...' }
+        'RUNNING' { $lblStatus.Text = ('Working... {0:0.0}%  (you can close this window)' -f $pct) }
         'DONE'    {
             $script:Running = $false
             $script:Timer.Stop()
             $prg.Value = 1000
-            $lblStatus.Text = 'Siap. Fail: ' + $txtOut.Text
+            $lblStatus.Text = 'Done. File: ' + $txtOut.Text
         }
         'ERROR'   {
             $script:Running = $false
             $script:Timer.Stop()
-            $lblStatus.Text = 'Ralat: ' + ($(if ($state.ContainsKey('DETAIL')) { $state['DETAIL'] } else { 'lihat tetingkap PowerShell' }))
+            $lblStatus.Text = 'Error: ' + ($(if ($state.ContainsKey('DETAIL')) { $state['DETAIL'] } else { 'see the PowerShell window' }))
         }
     }
 })
@@ -597,6 +650,7 @@ $script:Timer.Add_Tick({
 $form.Add_FormClosing({ $script:Timer.Stop(); $script:Timer.Dispose() })
 
 $cmbMode.SelectedIndex = 0
+if ($script:DetectedGpu) { $lblStatus.Text = "GPU detected: $($script:DetectedGpu)" }
 Update-Preview
 
 try {
@@ -605,7 +659,7 @@ try {
 catch {
     # Konsol disembunyikan oleh gui.cmd; jadi ralat mesti ke fail + dialog.
     $log = Join-Path ([IO.Path]::GetTempPath()) 'VideoStitch-gui-error.log'
-    $msg = "GUI gagal dibuka.`n`n$($_.Exception.Message)`n`nLog: $log"
+    $msg = "GUI failed to start.`n`n$($_.Exception.Message)`n`nLog: $log"
     try {
         $detail = "videoStitch GUI error`n$(Get-Date -Format o)`nPS $($PSVersionTable.PSVersion)`n`n$($_ | Out-String)`n$($_.ScriptStackTrace)"
         [System.IO.File]::WriteAllText($log, $detail)

@@ -59,6 +59,8 @@ param(
     [string]   $Out,
     [ValidateSet('copy', 'hevc', 'h264')] [string] $Mode = 'copy',
     [ValidateSet('high', 'balanced', 'small')] [string] $Quality = 'balanced',
+    [ValidateSet('auto', 'cpu', 'nvenc', 'qsv', 'amf', 'mf')] [string] $Encoder = 'auto',
+    [int]      $GpuDevice = 0,
     [string]   $Preset = 'medium',
     [int]      $Crf = 0,
     [string]   $FFmpeg,
@@ -237,6 +239,85 @@ function Get-EncodeSettings {
     [pscustomobject] @{ Codec = $codec; Crf = $crf; Preset = $Preset; Mode = $Mode }
 }
 
+function Get-EncoderPlan {
+    # Pulangkan hashtable: Codec + Args. Kualiti dipetakan ikut enjin:
+    #   cpu   -> -crf        (libx265/libx264)
+    #   nvenc -> -cq         (CQ, skala sedikit lebih rendah dari CRF)
+    #   qsv   -> -global_quality
+    #   amf   -> -qp_i/-qp_p
+    #   mf    -> -b:v (Media Foundation tak sokong CRF)
+    param([string] $Encoder, [string] $Mode, [string] $Q, [int] $CrfOverride, [string] $Preset, [int] $GpuDevice = 0)
+
+    $crf = if ($CrfOverride -gt 0) { $CrfOverride } else { $script:CrfMap[$Q] }
+    $nvencCq = if ($CrfOverride -gt 0) { [Math]::Max(1, $CrfOverride - 1) } else { @{ high = 19; balanced = 22; small = 27 }[$Q] }
+
+    switch ($Encoder) {
+        'nvenc' {
+            $codec = if ($Mode -eq 'hevc') { 'hevc_nvenc' } else { 'h264_nvenc' }
+            $p = @{ veryfast = 'p3'; medium = 'p5'; slow = 'p7' }[$Preset]
+            if (-not $p) { $p = 'p5' }
+            return @{ Codec = $codec; Args = @('-c:v', $codec, '-gpu', "$GpuDevice", '-preset', $p, '-rc', 'vbr', '-cq', "$nvencCq", '-b:v', '0') }
+        }
+        'qsv' {
+            $codec = if ($Mode -eq 'hevc') { 'hevc_qsv' } else { 'h264_qsv' }
+            return @{ Codec = $codec; Args = @('-c:v', $codec, '-global_quality', "$crf", '-preset', $Preset) }
+        }
+        'amf' {
+            $codec = if ($Mode -eq 'hevc') { 'hevc_amf' } else { 'h264_amf' }
+            $q = @{ veryfast = 'speed'; medium = 'balanced'; slow = 'quality' }[$Preset]
+            if (-not $q) { $q = 'balanced' }
+            return @{ Codec = $codec; Args = @('-c:v', $codec, '-rc', 'cqp', '-qp_i', "$crf", '-qp_p', "$crf", '-quality', $q) }
+        }
+        'mf' {
+            $codec = if ($Mode -eq 'hevc') { 'hevc_mf' } else { 'h264_mf' }
+            $b = @{ high = '10M'; balanced = '6M'; small = '3M' }[$Q]
+            return @{ Codec = $codec; Args = @('-c:v', $codec, '-b:v', $b) }
+        }
+        default {
+            $codec = if ($Mode -eq 'hevc') { 'libx265' } else { 'libx264' }
+            return @{ Codec = $codec; Args = @('-c:v', $codec, '-preset', $Preset, '-crf', "$crf") }
+        }
+    }
+}
+
+function Get-EncoderCodec {
+    param([string] $Encoder, [string] $Mode)
+    $hevc = ($Mode -eq 'hevc')
+    switch ($Encoder) {
+        'nvenc' { if ($hevc) { return 'hevc_nvenc' } else { return 'h264_nvenc' } }
+        'qsv'   { if ($hevc) { return 'hevc_qsv' }   else { return 'h264_qsv' } }
+        'amf'   { if ($hevc) { return 'hevc_amf' }   else { return 'h264_amf' } }
+        'mf'    { if ($hevc) { return 'hevc_mf' }    else { return 'h264_mf' } }
+        default { if ($hevc) { return 'libx265' }    else { return 'libx264' } }
+    }
+}
+
+function Test-EncoderUsable {
+    # 1) codec wujud dalam build ffmpeg  2) ujian encode 0.2s pada peranti sebenar
+    param([string] $Encoder, [string] $Mode, [string] $FFmpegPath)
+    if ($Encoder -eq 'cpu') { return $true }
+    $codec = Get-EncoderCodec -Encoder $Encoder -Mode $Mode
+    $list = & $FFmpegPath -hide_banner -encoders 2>&1 | Out-String
+    if ($list -notmatch ('(?m)^\s*V[.\w]+\s+' + [regex]::Escape($codec) + '\s')) { return $false }
+    try {
+        $probe = & $FFmpegPath -hide_banner -loglevel error -f lavfi -i 'color=c=black:s=256x144:d=0.2' -c:v $codec -f null - 2>&1
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch { return $false }
+}
+
+function Resolve-Encoder {
+    param([string] $Requested, [string] $Mode, [string] $FFmpegPath)
+    if ($Requested -eq 'cpu') { return 'cpu' }
+    $order = if ($Requested -eq 'auto') { @('nvenc', 'qsv', 'amf', 'mf') } else { @($Requested) }
+    foreach ($c in $order) {
+        if (Test-EncoderUsable -Encoder $c -Mode $Mode -FFmpegPath $FFmpegPath) { return $c }
+    }
+    if ($Requested -ne 'auto') { throw "Enkoder '$Requested' tidak tersedia pada mesin ini (codec tiada atau peranti gagal). Cuba -Encoder auto atau cpu." }
+    Write-Warning 'Tiada enkod GPU ditemui; guna CPU.'
+    return 'cpu'
+}
+
 function Get-NormalizeFilter {
     # Semua input -> saiz/fps yang sama; aspect kekal (pad hitam).
     param([object[]] $Infos)
@@ -261,8 +342,8 @@ function Quote-Arg {
 function Invoke-Stitch {
     param(
         [string[]] $Files, [string] $Out, [string] $Mode, [string] $Quality,
-        [string] $Preset, [int] $Crf, [string] $FFmpeg, [switch] $Install, [string] $Progress,
-        [string] $Log, [string] $State
+        [string] $Encoder = 'auto', [int] $GpuDevice = 0, [string] $Preset, [int] $Crf, [string] $FFmpeg,
+        [switch] $Install, [string] $Progress, [string] $Log, [string] $State
     )
 
     $Files = Expand-Files -Inputs $Files
@@ -292,12 +373,18 @@ function Invoke-Stitch {
 
     Remove-Item -LiteralPath $Progress, $Log, $State -ErrorAction SilentlyContinue
 
+    $encName = 'cpu'
+    if ($Mode -ne 'copy') {
+        $encName = Resolve-Encoder -Requested $Encoder -Mode $Mode -FFmpegPath $ff
+    }
+
     # 1) probe
     $setState = {
         param([string] $status, [double] $total)
         $lines = @()
         if ($total -gt 0) { $lines += ('TOTAL=' + $total.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         $lines += ('MODE=' + $Mode)
+        if ($Mode -ne 'copy') { $lines += ('ENCODER=' + $encName) }
         if ($status -like 'ERROR*') {
             $lines += 'STATUS=ERROR'
             $lines += ('DETAIL=' + ($status -replace '^ERROR ?', ''))
@@ -319,7 +406,11 @@ function Invoke-Stitch {
         throw $msg
     }
     if ($Mode -eq 'copy') { Write-Host '[2/4] Semua klip seragam: stream copy selamat.' -ForegroundColor Green }
-    else { Write-Host "[2/4] Encode $Mode (CRF $((Get-EncodeSettings -Q $Quality -CrfOverride $Crf -Preset $Preset -Mode $Mode).Crf), preset $Preset)." -ForegroundColor Green }
+    else {
+        $label = switch ($encName) { 'cpu' { 'CPU' } 'nvenc' { 'GPU NVENC' } 'qsv' { 'GPU QSV' } 'amf' { 'GPU AMF' } 'mf' { 'GPU MediaFoundation' } }
+        $crfShown = if ($Crf -gt 0) { $Crf } else { $script:CrfMap[$Quality] }
+        Write-Host "[2/4] Encode $Mode guna $label (kualiti $Quality = $crfShown, preset $Preset)." -ForegroundColor Green
+    }
 
     # 3) arahan
     $listDir = Split-Path -Parent $Progress
@@ -338,8 +429,9 @@ function Invoke-Stitch {
     }
     else {
         $filter = Get-NormalizeFilter -Infos $infos
-        foreach ($a in @('-c:v', $enc.Codec, '-preset', $enc.Preset, '-crf', "$($enc.Crf)",
-                         '-pix_fmt', 'yuv420p', '-vf', (Quote-Arg $filter))) { $ffArgs.Add($a) }
+        $plan = Get-EncoderPlan -Encoder $encName -Mode $Mode -Q $Quality -CrfOverride $Crf -Preset $Preset -GpuDevice $GpuDevice
+        foreach ($a in @($plan.Args)) { $ffArgs.Add($a) }
+        foreach ($a in @('-pix_fmt', 'yuv420p', '-vf', (Quote-Arg $filter))) { $ffArgs.Add($a) }
         if ($Mode -eq 'hevc') { $ffArgs.Add('-tag:v'); $ffArgs.Add('hvc1') }
         if ($hasAudio) { foreach ($a in @('-c:a', 'aac', '-b:a', '192k')) { $ffArgs.Add($a) } }
         else { $ffArgs.Add('-an') }
@@ -392,7 +484,7 @@ function Invoke-Stitch {
 # Jalankan hanya bila dipanggil sebagai skrip (bukan dot-source oleh test).
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Preset $Preset `
+        Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Encoder $Encoder -GpuDevice $GpuDevice -Preset $Preset `
                       -Crf $Crf -FFmpeg $FFmpeg -Install:$Install -Progress $Progress -Log $Log -State $State | Out-Null
         exit 0
     }

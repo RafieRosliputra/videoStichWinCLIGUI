@@ -120,6 +120,63 @@ Check 'crf default ikut tahap' {
     Assert-Equal (Get-EncodeSettings -Q 'small' -CrfOverride 18 -Preset medium -Mode hevc).Crf 18
 }
 
+# ---- 4b. enkoder GPU/CPU -----------------------------------------------------
+Check 'encoder plan: cpu guna crf' {
+    $p = Get-EncoderPlan -Encoder 'cpu' -Mode 'hevc' -Q 'balanced' -CrfOverride 0 -Preset 'medium'
+    Assert-Equal $p.Codec 'libx265'
+    Assert-True (($p.Args -join ' ') -match '-crf 23') "args: $($p.Args -join ' ')"
+}
+
+Check 'encoder plan: nvenc guna cq + preset p5' {
+    $p = Get-EncoderPlan -Encoder 'nvenc' -Mode 'hevc' -Q 'balanced' -CrfOverride 0 -Preset 'medium'
+    Assert-Equal $p.Codec 'hevc_nvenc'
+    $a = $p.Args -join ' '
+    Assert-True ($a -match '-cq 22') "args: $a"
+    Assert-True ($a -match '-preset p5') "args: $a"
+    Assert-True ($a -match '-b:v 0') "args: $a"
+}
+
+Check 'encoder plan: nvenc gpu index' {
+    $p = Get-EncoderPlan -Encoder 'nvenc' -Mode 'hevc' -Q 'balanced' -CrfOverride 0 -Preset 'medium' -GpuDevice 1
+    Assert-True (($p.Args -join ' ') -match '-gpu 1') "args: $($p.Args -join ' ')"
+}
+
+Check 'encoder plan: qsv guna global_quality' {
+    $p = Get-EncoderPlan -Encoder 'qsv' -Mode 'h264' -Q 'high' -CrfOverride 0 -Preset 'slow'
+    Assert-Equal $p.Codec 'h264_qsv'
+    Assert-True (($p.Args -join ' ') -match '-global_quality 20')
+}
+
+Check 'encoder plan: amf guna cqp' {
+    $p = Get-EncoderPlan -Encoder 'amf' -Mode 'hevc' -Q 'small' -CrfOverride 0 -Preset 'medium'
+    Assert-Equal $p.Codec 'hevc_amf'
+    Assert-True (($p.Args -join ' ') -match '-qp_i 28')
+}
+
+Check 'encoder codec mapping' {
+    Assert-Equal (Get-EncoderCodec -Encoder 'nvenc' -Mode 'hevc') 'hevc_nvenc'
+    Assert-Equal (Get-EncoderCodec -Encoder 'nvenc' -Mode 'h264') 'h264_nvenc'
+    Assert-Equal (Get-EncoderCodec -Encoder 'cpu' -Mode 'hevc') 'libx265'
+}
+
+Check 'Resolve-Encoder: cpu sentiasa berfungsi' {
+    $ff = (Get-Command ffmpeg).Source
+    Assert-Equal (Resolve-Encoder -Requested 'cpu' -Mode 'hevc' -FFmpegPath $ff) 'cpu'
+}
+
+Check 'Resolve-Encoder: nvenc ikut ketersediaan mesin' {
+    $ff = (Get-Command ffmpeg).Source
+    $usable = Test-EncoderUsable -Encoder 'nvenc' -Mode 'hevc' -FFmpegPath $ff
+    if ($usable) {
+        Assert-Equal (Resolve-Encoder -Requested 'nvenc' -Mode 'hevc' -FFmpegPath $ff) 'nvenc'
+    }
+    else {
+        $threw = $false
+        try { [void] (Resolve-Encoder -Requested 'nvenc' -Mode 'hevc' -FFmpegPath $ff) } catch { $threw = $true }
+        Assert-True $threw 'patut gagal bila NVENC tiada'
+    }
+}
+
 # ---- 5. cantuman sebenar (ffmpeg) -------------------------------------------
 # CLI dijalankan melalui fail job .ps1 (sama macam GUI buat) supaya binding
 # parameter betul dan exit code sebenar diuji.

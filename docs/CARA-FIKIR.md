@@ -134,6 +134,32 @@ Preset `medium` default: x265 `medium` sudah ~2× lebih lambat dari x264 `veryfa
 
 ---
 
+## 4b. GPU vs CPU: pemetaan kualiti, bukan sekadar tukar codec
+
+Nilai CRF tak boleh dipindah terus antara enjin. Setiap enjin ada skala sendiri:
+
+| Enjin | Parameter kualiti | Pemetaan (high/balanced/small) |
+|---|---|---|
+| libx265/libx264 | `-crf` | 20 / 23 / 28 |
+| hevc_nvenc | `-cq` (VBR, `-b:v 0`) | 19 / 22 / 27 |
+| hevc_qsv | `-global_quality` | 20 / 23 / 28 |
+| hevc_amf | `-qp_i/-qp_p` (CQP) | 20 / 23 / 28 |
+| hevc_mf | `-b:v` (tiada CRF) | 10M / 6M / 3M |
+
+Kenapa NVENC CQ = CRF−1? CQ NVENC pada nombor sama menghasilkan kualiti sedikit lebih rendah daripada x265 CRF (NVENC tiada psy-rd/adaptive quant penuh). Offset 1 mata mendekatkan hasil visual tanpa membesarkan fail banyak.
+
+Kenapa `-rc vbr -cq N -b:v 0`? `-b:v 0` mematikan siling bitrate supaya enjin benar-benar mengikut CQ; tanpa itu NVENC boleh clamp pada default bitrate.
+
+Pengesanan: `Test-EncoderUsable` buat dua semakan — (1) codec wujud dalam senarai `ffmpeg -encoders`, (2) encode ujian 0.2 s pada peranti sebenar. Semakan (2) penting sebab driver boleh ada codec tapi tiada peranti (cth. VM, RDP, GPU virtual seperti Parsec — codec nampak ada tapi `Cannot load nvcuda.dll`). Tanpa semakan ini, auto-detect akan pilih GPU yang gagal pada klip pertama.
+
+Preset dipetakan: CPU `veryfast/medium/slow`; NVENC `p3/p5/p7`; AMF `speed/balanced/quality`. Default `medium`→`p5`.
+
+**Pilih GPU tertentu.** GUI bina senarai daripada perkakasan sebenar: `nvidia-smi --query-gpu=name` untuk setiap kad NVIDIA (dengan indeks), WMI `Win32_VideoController` untuk Intel/AMD. Pilihan dihantar sebagai `-Encoder <jenis> -GpuDevice <n>`; untuk NVENC itu jadi `-gpu n` pada ffmpeg. Kekangan: QSV/AMF di Windows tak mendedahkan pemilih peranti yang bersih dalam ffmpeg, jadi satu-satunya kad Intel/AMD digunakan secara lalai — sebab itu GUI menyenaraikan satu baris per vendor, bukan per kad seperti NVENC. GPU maya (Parsec/RDP) sengaja tidak disenaraikan sebagai enkod sebab biasanya tiada permukaan enkod sebenar; `Test-EncoderUsable` akan menolaknya juga.
+
+Tradeoff diterima: GPU encode pada CQ sepadan biasanya 1.2–1.8× lebih besar daripada x265 pada kualiti sama, tetapi 5–25× lebih laju. Untuk kerja arkib sekali-sekala, CPU masih berbaloi; untuk iterasi pantas, GPU.
+
+---
+
 ## 5. Natural sort, bukan ordinal
 
 Ordinal (`Get-ChildItem | Sort-Object Name`) susun `clip10.mp4` **sebelum** `clip2.mp4` — salah untuk senarai rakaman kamera. Algoritma dipakai:
