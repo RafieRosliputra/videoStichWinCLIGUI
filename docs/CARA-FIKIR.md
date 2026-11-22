@@ -51,6 +51,22 @@ Alternatif PowerShell + WPF (XAML) lebih cantik tetapi XAML dalam string PowerSh
 
 ---
 
+## 2a. Installer: per-user, tanpa admin
+
+| Keputusan | Pilihan | Sebab |
+|---|---|---|
+| Lokasi | `%LOCALAPPDATA%\Programs\videoStitch` | tiada UAC; uninstall bersih; user biasa boleh pakai |
+| Shortcut | Desktop + Start Menu | orang cari app di dua tempat itu |
+| Daftar | HKCU `...\Uninstall\videoStitch` | muncul dalam Settings → Apps tanpa admin |
+| Satu fail | `Setup-videoStitch.cmd` → `setup.ps1` | pengguna hanya klik satu fail; logik kekal dalam PS (senang debug) |
+| Compile | ps2exe, **fallback** `VideoStitch.cmd` | installer tak boleh gagal hanya kerana PSGallery tak dapat diakses |
+
+Kenapa `Setup-videoStitch.cmd` bukan `.exe` installer (Inno/NSIS)? Membina `.exe` installer perlu Windows + toolchain; repo dibangunkan di macOS. `.cmd` satu-fail memuat turun zip rilis sendiri, jadi tiada build step di sisi kami dan tiada fail tersimpan dalam git.
+
+Risiko yang diterima: `.cmd` boleh disekat oleh polisi organisasi → README sediakan laluan manual (`install.cmd` atau portable).
+
+---
+
 ## 2b. Bila perlu .exe: ps2exe vs C# self-contained
 
 | Cara | Masa | Saiz | Keperluan pengguna | Status |

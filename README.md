@@ -6,6 +6,26 @@ Cantum (stitch / concat) banyak klip video jadi **satu fail** — GUI WinForms r
 
 ---
 
+## 0. Pasang — satu klik (Windows 11)
+
+1. Muat turun **`Setup-videoStitch.cmd`** dari [Releases](../../releases/latest)
+2. Double-click. Ikut arahan di skrin.
+
+Ia buat semua ini sendiri:
+- muat turun zip rilis terbaharu
+- extract ke `%TEMP%`, jalankan pemasang
+- salin ke `%LOCALAPPDATA%\Programs\videoStitch` (**tiada UAC/admin**)
+- compile `VideoStitch.exe` + `stitch.exe` (kalau gagal → `VideoStitch.cmd`, app tetap jalan)
+- tawarkan pasang ffmpeg (`winget`, tanya dulu)
+- buat shortcut **Desktop** + **Start Menu**
+- daftar dalam **Settings → Apps** dengan uninstaller
+
+Cara manual (kalau script .cmd disekat): extract zip → double-click **`install.cmd`**.
+
+Nyahpasang: Settings → Apps → videoStitch, atau jalan `uninstall.ps1` dalam folder pemasangan.
+
+---
+
 ## 1. Apa ia buat
 
 | | |
@@ -45,9 +65,17 @@ Tiada pemasangan senyap — sentiasa ada pengesahan atau flag eksplisit.
 
 ## 3. Mula pantas — GUI
 
-### 3a. Muat turun & buka (Windows 11)
+### 3a. Buka (sudah dipasang)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.2.zip`
+Selepas `Setup-videoStitch.cmd`, buka melalui shortcut Desktop / Start Menu, atau:
+
+```powershell
+explorer "$env:LOCALAPPDATA\Programs\videoStitch"
+```
+
+### 3a-alt. Tanpa installer (portable)
+
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.3.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -135,6 +163,11 @@ videoStichWinCLIGUI/
 ├─ stitch.cmd              # launcher CLI
 ├─ bin/stitch.ps1          # enjin + CLI (probe, sahkan, bina arahan, progress)
 ├─ gui/VideoStitchGUI.ps1  # WinForms GUI (drag-drop, susunan, kualiti, progress)
+├─ install.cmd             # pemasang (double-click) -> install/install.ps1
+├─ Setup-videoStitch.cmd   # pemasang SATU FAIL (muat turun rilis terbaharu)
+├─ setup.ps1               # logik pemasang satu-fail
+├─ install/install.ps1     # salin + compile + ffmpeg + shortcut + daftar uninstall
+├─ install/uninstall.ps1   # nyahpasang (shortcut, registry, folder)
 ├─ build/build-exe.ps1     # bina dist\VideoStitch.exe + dist\stitch.exe (ps2exe)
 ├─ tests/run-tests.ps1     # ujian (natural sort, uniformiti, list, merge sebenar)
 └─ docs/CARA-FIKIR.md      # kenapa ia direka begini (keputusan + tradeoff)
