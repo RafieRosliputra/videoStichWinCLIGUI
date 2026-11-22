@@ -74,7 +74,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.2.1'
+$script:AppVersion = '0.2.2'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -369,6 +369,34 @@ function Get-NormalizeFilter {
            "pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=$f"
 }
 
+function Get-TotalInputBytes {
+    param([string[]] $Paths)
+    $sum = 0L
+    foreach ($p in $Paths) {
+        try { $sum += (Get-Item -LiteralPath $p).Length } catch { }
+    }
+    return $sum
+}
+
+function Assert-FreeSpace {
+    # Untuk copy, output ~= jumlah input. Tolak awal kalau ruang tak cukup.
+    param([string] $OutPath, [long] $NeedBytes)
+    if ($NeedBytes -le 0) { return }
+    try {
+        $root = [System.IO.Path]::GetPathRoot($OutPath)
+        if (-not $root) { return }
+        $drive = (Get-Item -LiteralPath $root -ErrorAction Stop).PSDrive
+        if (-not $drive) { return }
+        $free = [long] $drive.Free
+        $needWithMargin = [long] ($NeedBytes * 1.03)
+        if ($free -lt $needWithMargin) {
+            throw ("Not enough free space on {0}: need ~{1:N1} GB, free {2:N1} GB.`nFree up space or choose another output folder." -f $root, ($needWithMargin / 1GB), ($free / 1GB))
+        }
+    }
+    catch [System.Management.Automation.RuntimeException] { throw }
+    catch { }   # drive query tak tersedia - jangan sekat kerja
+}
+
 function Quote-Arg {
     param([string] $Value)
     return '"' + ($Value -replace '"', '\"') + '"'
@@ -410,6 +438,11 @@ function Invoke-Stitch {
 
     $outDir = Split-Path -Parent $Out
     if ($outDir -and -not (Test-Path -LiteralPath $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
+
+    if ($Mode -eq 'copy') {
+        $need = Get-TotalInputBytes -Paths $Files
+        if ($need -gt 0) { Assert-FreeSpace -OutPath $Out -NeedBytes $need }
+    }
 
     Remove-Item -LiteralPath $Progress, $Log, $State -ErrorAction SilentlyContinue
 
@@ -501,7 +534,8 @@ function Invoke-Stitch {
 
     Write-Host "[3/4] ffmpeg $($Mode) -> $Out" -ForegroundColor Cyan
     $argLine = ($ffArgs -join ' ')
-    Write-Verbose "ARAHAN: $ff $argLine"
+    $cmdFile = Join-Path (Split-Path -Parent $State) 'ffmpeg-cmd.txt'
+    try { [System.IO.File]::WriteAllText($cmdFile, "$ff $argLine", [System.Text.UTF8Encoding]::new($false)) } catch { }
 
     & $setState 'RUNNING' $total
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -528,11 +562,20 @@ function Invoke-Stitch {
     $sw.Stop()
     Write-Host ''
 
+    # ExitCode boleh null sejurus selepas proses tamat (race Windows) - tunggu & refresh.
+    if ($null -eq $proc.ExitCode) { try { $proc.WaitForExit() } catch { } }
+    try { $proc.Refresh() } catch { }
     $code = $proc.ExitCode
+    if ($null -eq $code) { $code = -999 }
+
     if ($code -ne 0) {
-        $err = if (Test-Path -LiteralPath $Log) { (Get-Content -LiteralPath $Log -Tail 15) -join "`n" } else { '' }
+        $err = if ((Test-Path -LiteralPath $Log) -and (Get-Item -LiteralPath $Log).Length -gt 0) {
+            (Get-Content -LiteralPath $Log -Tail 15) -join "`n"
+        } else {
+            "ffmpeg log is empty - the encoder was most likely killed (window closed, USB drive removed, antivirus, or out of disk)."
+        }
         & $setState "ERROR rc=$code" $total
-        throw "ffmpeg failed (rc=$code).`n$err"
+        throw "ffmpeg failed (rc=$code).`n$err`nCommand: $cmdFile"
     }
     & $setState 'DONE' $total
 

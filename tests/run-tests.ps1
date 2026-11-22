@@ -213,6 +213,30 @@ Check 'Resolve-Encoder: nvenc ikut ketersediaan mesin' {
     }
 }
 
+Check 'ruang disk: tolak bila tak cukup' {
+    $tmp = Join-Path $TmpBase ('vs-space-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $threw = $false
+        try { Assert-FreeSpace -OutPath (Join-Path $tmp 'o.mp4') -NeedBytes 100TB } catch { $threw = $true }
+        Assert-True $threw 'patut tolak 100TB'
+        Assert-FreeSpace -OutPath (Join-Path $tmp 'o.mp4') -NeedBytes 1KB
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Check 'saiz input dijumlah' {
+    $tmp = Join-Path $TmpBase ('vs-sum-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.bin'; $b = Join-Path $tmp 'b.bin'
+        [System.IO.File]::WriteAllBytes($a, [byte[]]::new(1000))
+        [System.IO.File]::WriteAllBytes($b, [byte[]]::new(2345))
+        Assert-Equal (Get-TotalInputBytes -Paths @($a, $b)) 3345
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 # ---- 5. cantuman sebenar (ffmpeg) -------------------------------------------
 # CLI dijalankan melalui fail job .ps1 (sama macam GUI buat) supaya binding
 # parameter betul dan exit code sebenar diuji.
@@ -315,7 +339,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.2.1'
+    Assert-Equal ($r -join '').Trim() '0.2.2'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {
