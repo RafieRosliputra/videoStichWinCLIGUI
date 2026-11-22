@@ -277,6 +277,21 @@ Check 'senarai fail dalam satu argumen koma (-File)' {
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+Check 'output tidak boleh sama dengan input' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-same-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'
+        New-TestClip -Path $a -Color red -Seconds 1
+        $r = Invoke-Cli -Files @($a) -Out $a -Mode copy
+        $txt = ($r -join "`n")
+        Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal'
+        Assert-True ($txt -match 'also listed as input') "message: $txt"
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 Check 'mod copy menolak klip tak seragam' {
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
     $tmp = Join-Path $TmpBase ('vs-mix-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -292,7 +307,7 @@ Check 'mod copy menolak klip tak seragam' {
               -State (Join-Path $tmp 's.txt') -Progress (Join-Path $tmp 'p.txt') -Log (Join-Path $tmp 'l.txt')
         $txt = ($r -join "`n")
         Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal'
-        Assert-True ($txt -match 'tidak selamat|tidak seragam') "mesej: $txt"
+        Assert-True ($txt -match 'not safe|not uniform') "message: $txt"
         Assert-True (-not (Test-Path -LiteralPath $out)) 'output tak sepatutnya wujud'
     }
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }

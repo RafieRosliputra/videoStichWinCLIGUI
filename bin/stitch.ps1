@@ -80,23 +80,23 @@ function Get-FFmpegPath {
     param([string] $Explicit)
     if ($Explicit) {
         if (Test-Path -LiteralPath $Explicit) { return (Resolve-Path -LiteralPath $Explicit).Path }
-        throw "ffmpeg tidak dijumpai: $Explicit"
+        throw "ffmpeg not found: $Explicit"
     }
     $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     if ($env:FFMPEG_PATH -and (Test-Path -LiteralPath $env:FFMPEG_PATH)) { return $env:FFMPEG_PATH }
-    throw "ffmpeg tidak dijumpai dalam PATH. Windows: winget install -e --id Gyan.FFmpeg"
+    throw "ffmpeg not found in PATH. Windows: winget install -e --id Gyan.FFmpeg"
 }
 
 function Install-FFmpeg {
     # Opt-in sahaja (-Install atau butang GUI). Tidak memasang secara senyap.
-    if (-not ($env:OS -eq 'Windows_NT')) { throw 'Auto-install hanya untuk Windows (winget).' }
+    if (-not ($env:OS -eq 'Windows_NT')) { throw 'Auto-install is Windows-only (winget).' }
     $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if (-not $winget) { throw 'winget tidak dijumpai. Pasang "App Installer" dari Microsoft Store.' }
-    Write-Host '[ffmpeg] Memasang Gyan.FFmpeg melalui winget...' -ForegroundColor Yellow
+    if (-not $winget) { throw 'winget not found. Install "App Installer" from the Microsoft Store.' }
+    Write-Host '[ffmpeg] Installing Gyan.FFmpeg via winget...' -ForegroundColor Yellow
     & $winget.Source install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) { throw "winget gagal (rc=$LASTEXITCODE). Pasang manual: winget install -e --id Gyan.FFmpeg" }
-    Write-Host '[ffmpeg] Selesai dipasang.' -ForegroundColor Green
+    if ($LASTEXITCODE -ne 0) { throw "winget failed (rc=$LASTEXITCODE). Install manually: winget install -e --id Gyan.FFmpeg" }
+    Write-Host '[ffmpeg] Installed.' -ForegroundColor Green
 }
 
 function Get-FFprobePath {
@@ -162,7 +162,7 @@ function Expand-Files {
 function Get-MediaInfo {
     param([string] $Path, [string] $FFprobePath)
     $raw = & $FFprobePath -v error -print_format json -show_streams -show_format -i $Path 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $raw) { throw "ffprobe gagal membaca: $Path" }
+    if ($LASTEXITCODE -ne 0 -or -not $raw) { throw "ffprobe could not read: $Path" }
     $o = $raw | ConvertFrom-Json
     $v = @($o.streams | Where-Object { $_.codec_type -eq 'video' })[0]
     $a = @($o.streams | Where-Object { $_.codec_type -eq 'audio' })[0]
@@ -313,8 +313,8 @@ function Resolve-Encoder {
     foreach ($c in $order) {
         if (Test-EncoderUsable -Encoder $c -Mode $Mode -FFmpegPath $FFmpegPath) { return $c }
     }
-    if ($Requested -ne 'auto') { throw "Enkoder '$Requested' tidak tersedia pada mesin ini (codec tiada atau peranti gagal). Cuba -Encoder auto atau cpu." }
-    Write-Warning 'Tiada enkod GPU ditemui; guna CPU.'
+    if ($Requested -ne 'auto') { throw "Encoder '$Requested' is not available on this machine (codec missing or device failed). Try -Encoder auto or cpu." }
+    Write-Warning 'No GPU encoder found; using CPU.'
     return 'cpu'
 }
 
@@ -347,10 +347,13 @@ function Invoke-Stitch {
     )
 
     $Files = Expand-Files -Inputs $Files
-    if (-not $Files -or $Files.Count -lt 1) { throw 'Tiada fail input (-Files).' }
-    if (-not $Out) { throw 'Tiada output (-Out).' }
-    foreach ($f in $Files) { if (-not (Test-Path -LiteralPath $f)) { throw "Fail tidak wujud: $f" } }
-    if ($Files.Count -eq 1) { Write-Warning 'Hanya 1 fail: kerja jadi remux, bukan cantuman.' }
+    if (-not $Files -or $Files.Count -lt 1) { throw 'No input files (-Files).' }
+    if (-not $Out) { throw 'No output path (-Out).' }
+    foreach ($f in $Files) {
+        if (-not (Test-Path -LiteralPath $f)) { throw "Input file not found: $f" }
+        if ($f -eq $Out) { throw "Output file is also listed as input: $Out" }
+    }
+    if ($Files.Count -eq 1) { Write-Warning 'Only one input file: this is a remux, not a stitch.' }
 
     try { $ff = Get-FFmpegPath -Explicit $FFmpeg }
     catch {
@@ -359,7 +362,7 @@ function Invoke-Stitch {
             $ff = Get-FFmpegPath -Explicit $FFmpeg
         }
         else {
-            throw "$($_.Exception.Message)`nCuba: -Install (auto winget) atau 'winget install -e --id Gyan.FFmpeg'."
+            throw "$($_.Exception.Message)`nTry: -Install (auto winget) or 'winget install -e --id Gyan.FFmpeg'."
         }
     }
     $fp = Get-FFprobePath -FFmpegPath $ff
@@ -394,22 +397,22 @@ function Invoke-Stitch {
     }
     & $setState 'PROBE' 0
 
-    Write-Host "[1/4] Probe $($Files.Count) fail..." -ForegroundColor Cyan
+    Write-Host "[1/4] Probing $($Files.Count) file(s)..." -ForegroundColor Cyan
     $infos = @(foreach ($f in $Files) { Get-MediaInfo -Path $f -FFprobePath $fp })
     $total = ($infos | Measure-Object -Property Duration -Sum).Sum
 
     # 2) sahkan
     $issues = Test-Uniform -Infos $infos
     if ($Mode -eq 'copy' -and $issues.Count -gt 0) {
-        $msg = "Mod copy tidak selamat, klip tidak seragam:`n  " + ($issues -join "`n  ") + "`n`nGuna -Mode hevc atau -Mode h264."
+        $msg = "Copy mode is not safe, clips are not uniform:`n  " + ($issues -join "`n  ") + "`n`nUse -Mode hevc or -Mode h264."
         & $setState ('ERROR ' + ($issues -join '; ')) $total
         throw $msg
     }
-    if ($Mode -eq 'copy') { Write-Host '[2/4] Semua klip seragam: stream copy selamat.' -ForegroundColor Green }
+    if ($Mode -eq 'copy') { Write-Host '[2/4] All clips uniform: stream copy is safe.' -ForegroundColor Green }
     else {
         $label = switch ($encName) { 'cpu' { 'CPU' } 'nvenc' { 'GPU NVENC' } 'qsv' { 'GPU QSV' } 'amf' { 'GPU AMF' } 'mf' { 'GPU MediaFoundation' } }
         $crfShown = if ($Crf -gt 0) { $Crf } else { $script:CrfMap[$Quality] }
-        Write-Host "[2/4] Encode $Mode guna $label (kualiti $Quality = $crfShown, preset $Preset)." -ForegroundColor Green
+        Write-Host "[2/4] Encoding $Mode with $label (quality $Quality = $crfShown, preset $Preset)." -ForegroundColor Green
     }
 
     # 3) arahan
@@ -463,7 +466,7 @@ function Invoke-Stitch {
                     [TimeSpan]::FromSeconds($total).ToString('hh\:mm\:ss'))
             }
         }
-        else { Write-Host -NoNewline "`r[4/4] bekerja...  " }
+        else { Write-Host -NoNewline "`r[4/4] working...  " }
     }
     $sw.Stop()
     Write-Host ''
@@ -472,7 +475,7 @@ function Invoke-Stitch {
     if ($code -ne 0) {
         $err = if (Test-Path -LiteralPath $Log) { (Get-Content -LiteralPath $Log -Tail 15) -join "`n" } else { '' }
         & $setState "ERROR rc=$code" $total
-        throw "ffmpeg gagal (rc=$code).`n$err"
+        throw "ffmpeg failed (rc=$code).`n$err"
     }
     & $setState 'DONE' $total
 

@@ -386,6 +386,8 @@ function Add-FilesTo-List {
         if (-not (Test-Path -LiteralPath $p)) { continue }
         if (-not (Test-VideoFile $p)) { continue }
         $full = (Resolve-Path -LiteralPath $p).Path
+        # jangan masukkan fail output semasa sebagai input
+        if ($txtOut.Text.Trim() -and $full -eq $txtOut.Text.Trim()) { continue }
         if (-not $script:Files.Contains($full)) { [void] $script:Files.Add($full); $added++ }
     }
     if ($added -gt 0) {
@@ -567,9 +569,24 @@ $btnLog.Add_Click({ if ($script:JobDir -and (Test-Path -LiteralPath $script:JobD
 $btnRun.Add_Click({
     try {
         if ($script:Files.Count -lt 1) { throw 'Add at least one video file.' }
+
+        $missing = @($script:Files | Where-Object { -not (Test-Path -LiteralPath $_) })
+        if ($missing.Count -gt 0) {
+            $names = ($missing | ForEach-Object { Split-Path -Leaf $_ }) -join "`n"
+            $ans = [System.Windows.Forms.MessageBox]::Show(
+                "These files are missing:`n`n$names`n`nRemove them from the list and continue?",
+                'Missing files', 'YesNo', 'Warning')
+            if ($ans -ne 'Yes') { $script:Running = $false; $lblStatus.Text = 'Cancelled: missing files.'; return }
+            foreach ($m in $missing) { [void] $script:Files.Remove($m) }
+            Update-List
+            Update-Preview
+            if ($script:Files.Count -lt 1) { throw 'No files left after removing the missing ones.' }
+        }
+
         $out = $txtOut.Text.Trim()
         if (-not $out) { throw 'Set an output folder / file name first.' }
         if (-not $out.ToLowerInvariant().EndsWith('.mp4')) { $out += '.mp4'; $txtOut.Text = $out }
+        if ($script:Files -contains $out) { throw 'The output file is also in the input list. Remove it first.' }
         $outDir = Split-Path -Parent $out
         if ($outDir -and -not (Test-Path -LiteralPath $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 
