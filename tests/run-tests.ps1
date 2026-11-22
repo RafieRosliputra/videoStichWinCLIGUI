@@ -211,12 +211,13 @@ function Invoke-Cli {
     param(
         [string[]] $Files, [string] $Out, [string] $Mode = 'copy',
         [string] $Quality = 'balanced', [string] $Preset = 'medium',
-        [double] $Fps = 0, [string] $State, [string] $Progress, [string] $Log
+        [double] $Fps = 0, [switch] $StrictFps, [string] $State, [string] $Progress, [string] $Log
     )
     $fileList = ($Files | ForEach-Object { Quote-PS $_ }) -join ','
     $cmd = "& " + (Quote-PS $cli) + " -Files $fileList -Out " + (Quote-PS $Out) + " -Mode $Mode"
     if ($Mode -ne 'copy') { $cmd += " -Quality $Quality -Preset $Preset" }
     if ($Fps -gt 0) { $cmd += " -Fps $Fps" }
+    if ($StrictFps) { $cmd += ' -StrictFps' }
     if ($State)    { $cmd += " -State " + (Quote-PS $State) }
     if ($Progress) { $cmd += " -Progress " + (Quote-PS $Progress) }
     if ($Log)      { $cmd += " -Log " + (Quote-PS $Log) }
@@ -302,7 +303,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.1.9'
+    Assert-Equal ($r -join '').Trim() '0.2.0'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {
@@ -334,6 +335,41 @@ Check 'output tidak boleh sama dengan input' {
         $txt = ($r -join "`n")
         Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal'
         Assert-True ($txt -match 'also listed as input') "message: $txt"
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Check 'copy: fps berbeza diteruskan dengan amaran' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-fpscopy-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'
+        New-TestClip -Path $a -Color red -Seconds 1
+        & ffmpeg -v error -y -f lavfi -i "color=c=blue:s=320x240:r=25:d=1" -f lavfi -i "sine=f=440:d=1" `
+                 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac $b
+        $out = Join-Path $tmp 'o.mp4'
+        $r = Invoke-Cli -Files @($a, $b) -Out $out -Mode copy
+        $txt = ($r -join "`n")
+        Assert-Equal $LASTEXITCODE 0 $txt
+        Assert-True ($txt -match 'fps differs|fps difference|cannot change') "output: $txt"
+        Assert-True (Test-Path -LiteralPath $out) 'output tiada'
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Check 'StrictFps: fps berbeza ditolak' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-strict-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'
+        New-TestClip -Path $a -Color red -Seconds 1
+        & ffmpeg -v error -y -f lavfi -i "color=c=blue:s=320x240:r=25:d=1" -f lavfi -i "sine=f=440:d=1" `
+                 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac $b
+        $r = Invoke-Cli -Files @($a, $b) -Out (Join-Path $tmp 'o.mp4') -Mode copy -StrictFps
+        Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal'
+        Assert-True (($r -join "`n") -match 'not safe') "message: $($r -join ' | ')"
     }
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }

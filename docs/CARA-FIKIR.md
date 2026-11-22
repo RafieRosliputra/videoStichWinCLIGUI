@@ -168,6 +168,16 @@ Kesan sampingan yang didokumen: `fps=60` pada sumber 59.94 menduplikasi ~0.06% f
 
 ---
 
+## 4d. fps = isu "lembut" untuk stream copy
+
+Klip kamera kerap melaporkan fps bercanggah walaupun kadar sebenar sama (DJI: `r_frame_rate=100/1`, `avg_frame_rate=60000/1001`; ada juga yang `avg_frame_rate=100/1`). Menolak Copy atas dasar fps sahaja menyekat kerja yang sebenarnya selamat.
+
+Keputusan: dalam `Copy`, isu fps dikelaskan **lembut** — beri amaran, teruskan. Isu **keras** (codec, resolusi, pix_fmt, audio) kekal menolak. `-StrictFps` mempromosikan fps ke keras untuk pengguna yang mahu ketat.
+
+Risiko diterima: kalau klip benar-benar 30 vs 60 fps, cantuman copy boleh menghasilkan masa yang ganjil di titik sambung. Dinyatakan dalam amaran: "If playback glitches at a join, re-run with -Mode hevc."
+
+---
+
 ## 5. Natural sort, bukan ordinal
 
 Ordinal (`Get-ChildItem | Sort-Object Name`) susun `clip10.mp4` **sebelum** `clip2.mp4` — salah untuk senarai rakaman kamera. Algoritma dipakai:

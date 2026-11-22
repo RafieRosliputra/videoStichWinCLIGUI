@@ -30,8 +30,9 @@ if ($SelfTest) {
         $ver = (& $ff.Source -version 2>$null | Select-Object -First 1)
         Write-Host ("ffmpeg     : {0} ({1})" -f $ff.Source, $ver) -ForegroundColor Green
     } else { Write-Host 'ffmpeg     : NOT FOUND - winget install -e --id Gyan.FFmpeg' -ForegroundColor Red }
-    $cli = Join-Path (Split-Path -Parent $PSScriptRoot) 'bin\stitch.ps1'
-    if (-not (Test-Path -LiteralPath $cli)) { $cli = Join-Path (Split-Path -Parent $PSScriptRoot) 'bin/stitch.ps1' }
+    $base = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { Split-Path -Parent ([Environment]::GetCommandLineArgs()[0]) }
+    $cli = Join-Path $base 'bin\stitch.ps1'
+    if (-not (Test-Path -LiteralPath $cli)) { $cli = Join-Path $base 'bin/stitch.ps1' }
     Write-Host ("CLI        : {0} ({1})" -f $cli, (Test-Path -LiteralPath $cli))
     $tmp = [IO.Path]::GetTempPath()
     $w = $true
@@ -117,16 +118,29 @@ function Quote-PS { param([string] $s) return "'" + $s.Replace("'", "''") + "'" 
 # Cari folder repo/instalasi. Bila dikompil jadi .exe (ps2exe), $PSScriptRoot
 # menunjuk ke folder sementara - jadi turutan carian bermula dari exe/ENV.
 function Get-BaseDir {
+    # $PSScriptRoot KOSONG bila dikompil jadi exe (ps2exe) - jangan Split-Path
+    # pada nilai kosong (itu punca "Cannot bind argument to parameter 'Path'").
     $candidates = @()
     if ($env:VIDEOSTITCH_ROOT) { $candidates += $env:VIDEOSTITCH_ROOT }
-    $candidates += (Split-Path -Parent $PSScriptRoot)
-    try { $candidates += (Split-Path -Parent ([Environment]::GetCommandLineArgs()[0])) } catch { }
-    foreach ($c in $candidates) {
-        if ($c -and (Test-Path -LiteralPath (Join-Path $c 'bin\stitch.ps1'))) { return $c }
+    if ($PSScriptRoot) { $candidates += (Split-Path -Parent $PSScriptRoot) }
+    try {
+        $exe = [Environment]::GetCommandLineArgs()[0]
+        if ($exe) { $candidates += (Split-Path -Parent $exe) }
     }
-    return (Split-Path -Parent $PSScriptRoot)
+    catch { }
+    try { $candidates += (Get-Location).Path } catch { }
+    foreach ($c in $candidates) {
+        if (-not $c) { continue }
+        if (Test-Path -LiteralPath (Join-Path $c 'bin\stitch.ps1')) { return $c }
+    }
+    foreach ($c in $candidates) { if ($c) { return $c } }
+    return $null
 }
 $script:RepoRoot = Get-BaseDir
+if (-not $script:RepoRoot) {
+    [System.Windows.Forms.MessageBox]::Show("Cannot locate the videoStitch folder (bin\stitch.ps1).`n`nSet %VIDEOSTITCH_ROOT% or run Setup again.", 'videoStitch', 'OK', 'Error') | Out-Null
+    exit 1
+}
 $script:CliPath  = Join-Path $script:RepoRoot 'bin\stitch.ps1'
 $script:Files    = [System.Collections.Generic.List[string]]::new()
 $script:JobDir   = $null
@@ -193,7 +207,7 @@ $script:Qualities = @(
 # --------------------------------------------------------------- kawalan ----
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'videoStitch v0.1.9 - video stitcher (Windows)'
+$form.Text = 'videoStitch v0.2.0 - video stitcher (Windows)'
 $form.Size = New-Object System.Drawing.Size(1040, 760)
 $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
 $form.StartPosition = 'CenterScreen'
@@ -209,7 +223,7 @@ $form.Controls.Add($lblHint)
 $list = New-Object System.Windows.Forms.ListBox
 $list.Location = New-Object System.Drawing.Point(12, 34)
 $list.Size = New-Object System.Drawing.Size(700, 300)
-$list.SelectionMode = 'Extended'
+$list.SelectionMode = 'MultiExtended'
 $list.AllowDrop = $true
 $list.HorizontalScrollbar = $true
 $list.IntegralHeight = $false

@@ -69,11 +69,12 @@ param(
     [string]   $Progress,
     [string]   $Log,
     [string]   $State,
+    [switch]   $StrictFps,
     [switch]   $Version
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.1.9'
+$script:AppVersion = '0.2.0'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -219,7 +220,9 @@ function Test-Uniform {
         if ($i.VCodec -ne $ref.VCodec) { [void] $issues.Add("$name : codec video $($i.VCodec) != $($ref.VCodec)") }
         if ($i.Width -ne $ref.Width -or $i.Height -ne $ref.Height) { [void] $issues.Add("$name : resolusi $($i.Width)x$($i.Height) != $($ref.Width)x$($ref.Height)") }
         if ($i.Fps -gt 0 -and $ref.Fps -gt 0 -and [Math]::Abs($i.Fps - $ref.Fps) -gt 0.05) {
-            [void] $issues.Add("$name : fps $($i.Fps) != $($ref.Fps)")
+            # fps = isu "lembut": concat copy masih biasanya berfungsi (metadata DJI
+            # sering salah). Ia jadi keras hanya dengan -StrictFps.
+            [void] $issues.Add("SOFT: $name : fps $($i.Fps) != $($ref.Fps)")
         }
         if ($i.PixFmt -ne $ref.PixFmt) { [void] $issues.Add("$name : pix_fmt $($i.PixFmt) != $($ref.PixFmt)") }
         if ($i.HasAudio -ne $ref.HasAudio) { [void] $issues.Add("$name : audio ada/tidak tak seragam") }
@@ -425,15 +428,24 @@ function Invoke-Stitch {
 
     # 2) sahkan
     $issues = Test-Uniform -Infos $infos
-    if ($Mode -eq 'copy' -and $issues.Count -gt 0) {
-        $msg = "Copy mode is not safe, clips are not uniform:`n  " + ($issues -join "`n  ") + "`n`nUse -Mode hevc or -Mode h264."
-        & $setState ('ERROR ' + ($issues -join '; ')) $total
+    $hard = @($issues | Where-Object { $_ -notlike 'SOFT:*' })
+    $soft = @($issues | Where-Object { $_ -like 'SOFT:*' } | ForEach-Object { $_ -replace '^SOFT: ', '' })
+    if ($Mode -eq 'copy' -and $StrictFps) { $hard += $soft; $soft = @() }
+    if ($Mode -eq 'copy' -and $hard.Count -gt 0) {
+        $msg = "Copy mode is not safe, clips are not uniform:`n  " + ($hard -join "`n  ") + "`n`nUse -Mode hevc or -Mode h264."
+        & $setState ('ERROR ' + ($hard -join '; ')) $total
         throw $msg
+    }
+    if ($Mode -eq 'copy' -and $soft.Count -gt 0) {
+        Write-Warning ("Frame rate differs between clips; continuing with stream copy anyway:`n  " + ($soft -join "`n  ") + "`nIf playback glitches at a join, re-run with -Mode hevc.")
     }
     if ($Mode -eq 'copy' -and $Fps -gt 0) {
         throw "Copy mode cannot change frame rate (fps stays $($infos[0].Fps)). Use -Mode hevc or -Mode h264 to force $Fps fps."
     }
-    if ($Mode -eq 'copy') { Write-Host '[2/4] All clips uniform: stream copy is safe.' -ForegroundColor Green }
+    if ($Mode -eq 'copy' -and $soft.Count -gt 0) {
+        Write-Host '[2/4] Copy continues despite fps difference (see warning).' -ForegroundColor Yellow
+    }
+    elseif ($Mode -eq 'copy') { Write-Host '[2/4] All clips uniform: stream copy is safe.' -ForegroundColor Green }
     else {
         $label = switch ($encName) { 'cpu' { 'CPU' } 'nvenc' { 'GPU NVENC' } 'qsv' { 'GPU QSV' } 'amf' { 'GPU AMF' } 'mf' { 'GPU MediaFoundation' } }
         $crfShown = if ($Crf -gt 0) { $Crf } else { $script:CrfMap[$Quality] }
@@ -512,7 +524,7 @@ function Invoke-Stitch {
 # Jalankan hanya bila dipanggil sebagai skrip (bukan dot-source oleh test).
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Encoder $Encoder -GpuDevice $GpuDevice -Fps $Fps -Preset $Preset `
+        Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Encoder $Encoder -GpuDevice $GpuDevice -Fps $Fps -Preset $Preset -StrictFps:$StrictFps `
                       -Crf $Crf -FFmpeg $FFmpeg -Install:$Install -Progress $Progress -Log $Log -State $State | Out-Null
         exit 0
     }
