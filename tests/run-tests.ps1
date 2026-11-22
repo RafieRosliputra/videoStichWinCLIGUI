@@ -138,6 +138,30 @@ Check 'fps sasaran: mode, bukan maksimum' {
     Assert-Equal (Get-TargetFps -Infos $infos) 59.94
 }
 
+Check 'fps ringkasan: majoriti dulu, minoriti dinamakan (kes DJI 27+1)' {
+    $infos = @((New-Info 'odd100.mp4' -Fps 100))
+    for ($i = 0; $i -lt 27; $i++) { $infos += (New-Info "c$i.mp4" -Fps 59.94) }
+    $s = Get-FpsSummary -Infos $infos
+    Assert-Equal $s '27x 59.94 fps, 1x 100 fps (odd100.mp4)'
+}
+
+Check 'fps ringkasan: nama minoriti dihad 3 + "+N more"' {
+    $infos = @()
+    for ($i = 0; $i -lt 6; $i++) { $infos += (New-Info "m$i.mp4" -Fps 30) }
+    for ($i = 0; $i -lt 5; $i++) { $infos += (New-Info "x$i.mp4" -Fps 25) }
+    $s = Get-FpsSummary -Infos $infos
+    Assert-Equal $s '6x 30 fps, 5x 25 fps (x0.mp4, x1.mp4, x2.mp4, +2 more)'
+}
+
+Check 'copy block: isu fps digabung satu baris, isu lain dihad' {
+    $infos = @((New-Info 'a.mp4' -Fps 100), (New-Info 'b.mp4' -Fps 59.94), (New-Info 'c.mp4' -Fps 59.94))
+    $hard = @('b.mp4 : fps 59.94 != 100', 'c.mp4 : fps 59.94 != 100', 'p1 : x', 'p2 : x', 'p3 : x', 'p4 : x')
+    $l = Get-CopyBlockLines -Hard $hard -Infos $infos
+    Assert-Equal $l.Count 5
+    Assert-Equal $l[0] 'mixed frame rates: 2x 59.94 fps, 1x 100 fps (a.mp4)'
+    Assert-Equal $l[4] '+1 more issue(s)'
+}
+
 Check 'fps sasaran: force menang' {
     $infos = @((New-Info 'a.mp4' -Fps 59.94), (New-Info 'b.mp4' -Fps 100))
     Assert-Equal (Get-TargetFps -Infos $infos -ForceFps 60) 60
@@ -324,7 +348,9 @@ Check 'cantuman dengan apostrof dalam nama fail' {
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
         $a = Join-Path $tmp "it's a.mp4"
-        $b = Join-Path $tmp 'b"c.mp4'
+        # '"' tak sah dalam nama fail Windows -> guna aksara khas lain yang sah di sana.
+        $bName = if ($env:OS -eq 'Windows_NT') { 'b & c (1).mp4' } else { 'b"c.mp4' }
+        $b = Join-Path $tmp $bName
         New-TestClip -Path $a -Color red -Seconds 1
         New-TestClip -Path $b -Color blue -Seconds 1
         $out = Join-Path $tmp 'o.mp4'
@@ -339,7 +365,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.3.1'
+    Assert-Equal ($r -join '').Trim() '0.3.2'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {
@@ -388,6 +414,7 @@ Check 'copy: fps beza besar (30 vs 25) ditolak' {
         $txt = ($r -join "`n")
         Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal (fps 30 vs 25)'
         Assert-True ($txt -match 'not safe') "message: $txt"
+        Assert-True ($txt -match 'mixed frame rates: 1x 30 fps, 1x 25 fps \(b\.mp4\)') "ringkasan: $txt"
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $tmp 'o.mp4'))) 'output tak sepatutnya wujud'
     }
     finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }

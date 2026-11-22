@@ -74,7 +74,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.3.1'
+$script:AppVersion = '0.3.2'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -236,6 +236,44 @@ function Test-Uniform {
         }
     }
     return , $issues.ToArray()
+}
+
+function Get-FpsSummary {
+    # Ringkasan fps ikut kumpulan, cth "27x 59.94 fps, 1x 100 fps (a.mp4)".
+    # Kumpulan majoriti tak disenaraikan namanya; minoriti disenarai (maks 3).
+    param([object[]] $Infos)
+    $known = @($Infos | Where-Object { $_.Fps -gt 0 })
+    if ($known.Count -eq 0) { return '' }
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $groups = @($known | Group-Object -Property { [Math]::Round([double] $_.Fps, 2).ToString($inv) } |
+        Sort-Object -Property @{ Expression = 'Count'; Descending = $true },
+                              @{ Expression = { [double]::Parse($_.Name, $inv) }; Descending = $true })
+    $parts = @()
+    for ($k = 0; $k -lt $groups.Count; $k++) {
+        $g = $groups[$k]
+        $p = '{0}x {1} fps' -f $g.Count, ([double]::Parse($g.Name, $inv)).ToString('0.###', $inv)
+        if ($k -gt 0) {
+            $names = @($g.Group | ForEach-Object { Split-Path -Leaf $_.Path })
+            $shown = ($names | Select-Object -First 3) -join ', '
+            if ($names.Count -gt 3) { $shown += (', +{0} more' -f ($names.Count - 3)) }
+            $p += " ($shown)"
+        }
+        $parts += $p
+    }
+    return ($parts -join ', ')
+}
+
+function Get-CopyBlockLines {
+    # Isu keras Copy -> baris ringkas untuk mesej + state.txt (GUI papar DETAIL).
+    # Isu fps digabung jadi satu baris ringkasan; isu lain maks 3 + "+N more".
+    param([string[]] $Hard, [object[]] $Infos)
+    $fpsHard = @($Hard | Where-Object { $_ -match ' : fps ' })
+    $other = @($Hard | Where-Object { $_ -notmatch ' : fps ' })
+    $lines = @()
+    if ($fpsHard.Count -gt 0) { $lines += ('mixed frame rates: ' + (Get-FpsSummary -Infos $Infos)) }
+    $lines += @($other | Select-Object -First 3)
+    if ($other.Count -gt 3) { $lines += ('+{0} more issue(s)' -f ($other.Count - 3)) }
+    return , $lines
 }
 
 function ConvertTo-ConcatLine {
@@ -482,8 +520,9 @@ function Invoke-Stitch {
     $soft = @($issues | Where-Object { $_ -like 'SOFT:*' } | ForEach-Object { $_ -replace '^SOFT: ', '' })
     if ($Mode -eq 'copy' -and $StrictFps) { $hard += $soft; $soft = @() }
     if ($Mode -eq 'copy' -and $hard.Count -gt 0) {
-        $msg = "Copy mode is not safe, clips are not uniform:`n  " + ($hard -join "`n  ") + "`n`nUse -Mode hevc or -Mode h264."
-        & $setState ('ERROR ' + ($hard -join '; ')) $total
+        $lines = Get-CopyBlockLines -Hard $hard -Infos $infos
+        $msg = "Copy mode is not safe, clips are not uniform:`n  " + ($lines -join "`n  ") + "`n`nUse -Mode hevc or -Mode h264."
+        & $setState ('ERROR ' + ($lines -join '; ') + ' -> switch Mode to HEVC or H.264') $total
         throw $msg
     }
     if ($Mode -eq 'copy' -and $soft.Count -gt 0) {

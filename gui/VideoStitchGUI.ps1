@@ -96,6 +96,47 @@ function Get-FFmpegPath {
     return $null
 }
 
+function Get-FpsMix {
+    # Semak fps setiap klip (avg_frame_rate sahaja, sama seperti CLI).
+    # Pulangkan ringkasan jika beza >2% (Copy tak selamat); '' jika seragam/tak diketahui.
+    param([string] $FFmpeg, [string[]] $Files)
+    $fp = $null
+    if ($FFmpeg) {
+        $cand = Join-Path (Split-Path -Parent $FFmpeg) 'ffprobe.exe'
+        if (Test-Path -LiteralPath $cand) { $fp = $cand }
+    }
+    if (-not $fp) { $c = Get-Command ffprobe -ErrorAction SilentlyContinue; if ($c) { $fp = $c.Source } }
+    if (-not $fp) { return '' }
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $rows = @(foreach ($f in $Files) {
+        $r = @(& $fp -v error -select_streams v:0 -show_entries stream=avg_frame_rate -of default=nw=1:nk=1 -i $f 2>$null) | Select-Object -First 1
+        $v = 0.0
+        if ($r -match '^\s*(\d+)\s*/\s*(\d+)\s*$') { if ([double] $Matches[2] -gt 0) { $v = [double] $Matches[1] / [double] $Matches[2] } }
+        elseif ($r -match '^\s*[\d.]+\s*$') { $v = [double]::Parse($r.Trim(), $inv) }
+        if ($v -gt 0) { [pscustomobject] @{ Name = (Split-Path -Leaf $f); Fps = [Math]::Round($v, 2) } }
+    })
+    if ($rows.Count -lt 2) { return '' }
+    $min = ($rows | Measure-Object -Property Fps -Minimum).Minimum
+    $max = ($rows | Measure-Object -Property Fps -Maximum).Maximum
+    if ($min -le 0 -or ($max / $min) -le 1.02) { return '' }
+    $groups = @($rows | Group-Object -Property { $_.Fps.ToString($inv) } |
+        Sort-Object -Property @{ Expression = 'Count'; Descending = $true },
+                              @{ Expression = { [double]::Parse($_.Name, $inv) }; Descending = $true })
+    $parts = @()
+    for ($k = 0; $k -lt $groups.Count; $k++) {
+        $g = $groups[$k]
+        $p = '{0}x {1} fps' -f $g.Count, ([double]::Parse($g.Name, $inv)).ToString('0.###', $inv)
+        if ($k -gt 0) {
+            $names = @($g.Group | ForEach-Object { $_.Name })
+            $shown = ($names | Select-Object -First 3) -join ', '
+            if ($names.Count -gt 3) { $shown += (', +{0} more' -f ($names.Count - 3)) }
+            $p += " ($shown)"
+        }
+        $parts += $p
+    }
+    return ($parts -join "`n")
+}
+
 function Install-FFmpeg {
     # Opt-in: tanya dulu. Tidak memasang senyap.
     $ans = [System.Windows.Forms.MessageBox]::Show(
@@ -207,7 +248,7 @@ $script:Qualities = @(
 # --------------------------------------------------------------- kawalan ----
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'videoStitch v0.3.1 - video stitcher (Windows)'
+$form.Text = 'videoStitch v0.3.2 - video stitcher (Windows)'
 $form.Size = New-Object System.Drawing.Size(1040, 760)
 $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
 $form.StartPosition = 'CenterScreen'
@@ -637,6 +678,21 @@ $btnRun.Add_Click({
             $script:Running = $false
             $lblStatus.Text = 'ffmpeg is still missing. Install it, then press Run again.'
             return
+        }
+
+        # Copy + fps campur (>2%) = timeline rosak. Tawar tukar ke HEVC sebelum mula.
+        if ((Get-Mode) -eq 'copy') {
+            $lblStatus.Text = 'Checking frame rates...'
+            [System.Windows.Forms.Application]::DoEvents()
+            $mix = Get-FpsMix -FFmpeg $ff -Files $script:Files.ToArray()
+            if ($mix) {
+                $ans = [System.Windows.Forms.MessageBox]::Show(
+                    "Copy can't join clips with different frame rates:`n`n$mix`n`nSwitch Mode to HEVC (re-encode) and continue?",
+                    'Mixed frame rates', 'YesNo', 'Warning')
+                if ($ans -ne 'Yes') { $script:Running = $false; $lblStatus.Text = 'Cancelled: mixed frame rates need HEVC or H.264.'; return }
+                $cmbMode.SelectedIndex = 1   # HEVC
+                Update-Preview
+            }
         }
 
         # folder job berasingan setiap run
