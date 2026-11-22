@@ -193,7 +193,7 @@ $script:Qualities = @(
 # --------------------------------------------------------------- kawalan ----
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'videoStitch v0.1.8 - video stitcher (Windows)'
+$form.Text = 'videoStitch v0.1.9 - video stitcher (Windows)'
 $form.Size = New-Object System.Drawing.Size(1040, 760)
 $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
 $form.StartPosition = 'CenterScreen'

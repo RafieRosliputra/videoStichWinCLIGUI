@@ -92,8 +92,9 @@ Check 'fps: avg diutamakan atas r_frame_rate (DJI 100 vs 59.94)' {
     Assert-Equal (Resolve-Fps -Avg '60000/1001' -R '100/1') 59.94
 }
 
-Check 'fps: fallback r_frame_rate bila avg 0/0' {
-    Assert-Equal (Resolve-Fps -Avg '0/0' -R '25/1') 25
+Check 'fps: avg 0/0 -> tak diketahui (r tidak dipercayai)' {
+    Assert-Equal (Resolve-Fps -Avg '0/0' -R '100/1') 0
+    Assert-Equal (Resolve-Fps -Avg '0/0' -R '25/1') 0
 }
 
 Check 'fps: tiada nilai = 0' {
@@ -301,7 +302,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.1.8'
+    Assert-Equal ($r -join '').Trim() '0.1.9'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {

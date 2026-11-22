@@ -73,7 +73,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.1.8'
+$script:AppVersion = '0.1.9'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -164,20 +164,15 @@ function Expand-Files {
 }
 
 function Resolve-Fps {
-    # Pulangkan fps sebenar: avg_frame_rate diutamakan, r_frame_rate sebagai fallback.
-    param([string] $Avg, [string] $R)
-    $conv = {
-        param([string] $s)
-        if ($s -match '^(\d+)/(\d+)$') {
-            $num = [double] $Matches[1]; $den = [double] $Matches[2]
-            if ($den -gt 0) { return $num / $den }
-        }
-        return 0.0
+    # avg_frame_rate = kadar sebenar. r_frame_rate TIDAK dipercayai untuk fail
+    # kamera (DJI boleh tulis 100/1 pada klip 59.94). Kalau avg tiada (0/0),
+    # pulangkan 0 = "tak diketahui" - semakan fps akan dilangkau, bukan gagal.
+    param([string] $Avg, [string] $R = '')
+    if ($Avg -match '^(\d+)/(\d+)$') {
+        $num = [double] $Matches[1]; $den = [double] $Matches[2]
+        if ($den -gt 0 -and ($num / $den) -gt 0.5) { return [Math]::Round($num / $den, 3) }
     }
-    $a = & $conv $Avg
-    $r = & $conv $R
-    if ($a -gt 0.5) { return [Math]::Round($a, 3) }
-    return [Math]::Round($r, 3)
+    return 0.0
 }
 
 function Get-MediaInfo {
