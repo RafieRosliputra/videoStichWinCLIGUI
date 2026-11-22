@@ -88,6 +88,23 @@ Check 'uniform: semua sama = tiada isu' {
     Assert-Equal (Test-Uniform -Infos $infos).Count 0
 }
 
+Check 'fps: avg diutamakan atas r_frame_rate (DJI 100 vs 59.94)' {
+    Assert-Equal (Resolve-Fps -Avg '60000/1001' -R '100/1') 59.94
+}
+
+Check 'fps: fallback r_frame_rate bila avg 0/0' {
+    Assert-Equal (Resolve-Fps -Avg '0/0' -R '25/1') 25
+}
+
+Check 'fps: tiada nilai = 0' {
+    Assert-Equal (Resolve-Fps -Avg '' -R '') 0
+}
+
+Check 'uniform: fps tak diketahui tidak dianggap beza' {
+    $infos = @((New-Info 'a.mp4' -Fps 59.94), (New-Info 'b.mp4' -Fps 0))
+    Assert-Equal (Test-Uniform -Infos $infos).Count 0
+}
+
 Check 'uniform: resolusi berbeza dikesan' {
     $infos = @((New-Info 'a.mp4'), (New-Info 'b.mp4' -W 1280 -H 720))
     $issues = Test-Uniform -Infos $infos

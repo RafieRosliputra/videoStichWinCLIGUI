@@ -37,7 +37,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $isWin = ($env:OS -eq 'Windows_NT')
-$Version = '0.1.5'
+$Version = '0.1.6'
 
 if (-not $isWin -and -not $DryRun) { throw 'Pemasang ini untuk Windows sahaja.' }
 

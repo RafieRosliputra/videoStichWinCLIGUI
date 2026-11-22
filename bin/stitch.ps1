@@ -159,6 +159,23 @@ function Expand-Files {
     return , $out.ToArray()
 }
 
+function Resolve-Fps {
+    # Pulangkan fps sebenar: avg_frame_rate diutamakan, r_frame_rate sebagai fallback.
+    param([string] $Avg, [string] $R)
+    $conv = {
+        param([string] $s)
+        if ($s -match '^(\d+)/(\d+)$') {
+            $num = [double] $Matches[1]; $den = [double] $Matches[2]
+            if ($den -gt 0) { return $num / $den }
+        }
+        return 0.0
+    }
+    $a = & $conv $Avg
+    $r = & $conv $R
+    if ($a -gt 0.5) { return [Math]::Round($a, 3) }
+    return [Math]::Round($r, 3)
+}
+
 function Get-MediaInfo {
     param([string] $Path, [string] $FFprobePath)
     $raw = & $FFprobePath -v error -print_format json -show_streams -show_format -i $Path 2>$null
@@ -168,9 +185,10 @@ function Get-MediaInfo {
     $a = @($o.streams | Where-Object { $_.codec_type -eq 'audio' })[0]
 
     $fps = 0.0
-    if ($v -and $v.r_frame_rate -match '^(\d+)/(\d+)$') {
-        $num = [double] $Matches[1]; $den = [double] $Matches[2]
-        if ($den -gt 0) { $fps = [Math]::Round($num / $den, 3) }
+    if ($v) {
+        # r_frame_rate boleh menipu (cth DJI tulis 100/1 pada fail 59.94 fps).
+        # avg_frame_rate mewakili kadar sebenar; guna ia dahulu.
+        $fps = Resolve-Fps -Avg $v.avg_frame_rate -R $v.r_frame_rate
     }
     $dur = 0.0
     if ($o.format.duration) { $dur = [double] $o.format.duration }
@@ -201,7 +219,9 @@ function Test-Uniform {
         $name = Split-Path -Leaf $i.Path
         if ($i.VCodec -ne $ref.VCodec) { [void] $issues.Add("$name : codec video $($i.VCodec) != $($ref.VCodec)") }
         if ($i.Width -ne $ref.Width -or $i.Height -ne $ref.Height) { [void] $issues.Add("$name : resolusi $($i.Width)x$($i.Height) != $($ref.Width)x$($ref.Height)") }
-        if ([Math]::Abs($i.Fps - $ref.Fps) -gt 0.01) { [void] $issues.Add("$name : fps $($i.Fps) != $($ref.Fps)") }
+        if ($i.Fps -gt 0 -and $ref.Fps -gt 0 -and [Math]::Abs($i.Fps - $ref.Fps) -gt 0.05) {
+            [void] $issues.Add("$name : fps $($i.Fps) != $($ref.Fps)")
+        }
         if ($i.PixFmt -ne $ref.PixFmt) { [void] $issues.Add("$name : pix_fmt $($i.PixFmt) != $($ref.PixFmt)") }
         if ($i.HasAudio -ne $ref.HasAudio) { [void] $issues.Add("$name : audio ada/tidak tak seragam") }
         elseif ($i.HasAudio) {

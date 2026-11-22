@@ -75,7 +75,7 @@ explorer "$env:LOCALAPPDATA\Programs\videoStitch"
 
 ### 3a-alt. Tanpa installer (portable)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.5.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.6.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -242,7 +242,7 @@ Ia cetak versi PowerShell, ketersediaan WinForms, laluan ffmpeg, laluan CLI, dan
 | Gejala | Sebab / ubat |
 |---|---|
 | `ffmpeg tidak dijumpai` | GUI akan tawar auto-pasang; atau `winget install -e --id Gyan.FFmpeg`, kemudian buka semula terminal |
-| `Copy mode is not safe` | Klip berbeza codec/resolusi/fps → guna `-Mode hevc` |
+| `Copy mode is not safe` | Klip berbeza codec/resolusi/fps → guna `-Mode hevc`. Nota: fps dibaca dari `avg_frame_rate` (DJI kadang tulis `r_frame_rate` 100/1 pada fail 59.94) |
 | `Input file not found` | Fail dipadam / dipindah selepas dimasukkan. GUI akan tanya buang dari senarai; CLI berhenti dengan nama fail |
 | `Output file is also listed as input` | Output sama dengan salah satu input → tukar nama output |
 | Encode lambat | Guna `-Encoder nvenc` (NVIDIA) atau mod `Copy` kalau klip sudah seragam. CPU x265 memang 10–30× lebih lambat |
