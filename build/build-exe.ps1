@@ -16,7 +16,7 @@
 [CmdletBinding()]
 param(
     [string] $OutDir,
-    [string] $Version = '0.1.6',
+    [string] $Version = '0.1.7',
     [switch] $SkipInstall,
     [switch] $CliOnly,
     [switch] $GuiOnly

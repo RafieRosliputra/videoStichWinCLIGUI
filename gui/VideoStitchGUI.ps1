@@ -173,6 +173,17 @@ if (-not ($script:Encoders | Where-Object { $_.Kind -eq 'qsv' })) {
 $script:Encoders.Add([pscustomobject]@{ Label = 'CPU (x265/x264)'; Kind = 'cpu'; Device = 0 })
 $script:DetectedGpu = ($detected -join ', ')
 
+$script:FpsOptions = @(
+    [pscustomobject]@{ Label = 'Auto fps'; Value = 0 },
+    [pscustomobject]@{ Label = '23.976';   Value = 23.976 },
+    [pscustomobject]@{ Label = '24';       Value = 24 },
+    [pscustomobject]@{ Label = '25';       Value = 25 },
+    [pscustomobject]@{ Label = '29.97';    Value = 29.97 },
+    [pscustomobject]@{ Label = '30';       Value = 30 },
+    [pscustomobject]@{ Label = '50';       Value = 50 },
+    [pscustomobject]@{ Label = '59.94';    Value = 59.94 },
+    [pscustomobject]@{ Label = '60';       Value = 60 }
+)
 $script:Qualities = @(
     [pscustomobject]@{ Label = 'High (CRF 20)';      Value = 'high' },
     [pscustomobject]@{ Label = 'Balanced (CRF 23)';  Value = 'balanced' },
@@ -272,38 +283,46 @@ $form.Controls.Add($grpMode)
 $cmbMode = New-Object System.Windows.Forms.ComboBox
 $cmbMode.DropDownStyle = 'DropDownList'
 $cmbMode.Location = New-Object System.Drawing.Point(10, 24)
-$cmbMode.Size = New-Object System.Drawing.Size(236, 24)
+$cmbMode.Size = New-Object System.Drawing.Size(200, 24)
 foreach ($m in $script:Modes) { [void] $cmbMode.Items.Add($m.Label) }
 $cmbMode.SelectedIndex = 0
 $grpMode.Controls.Add($cmbMode)
 
 $cmbQuality = New-Object System.Windows.Forms.ComboBox
 $cmbQuality.DropDownStyle = 'DropDownList'
-$cmbQuality.Location = New-Object System.Drawing.Point(254, 24)
-$cmbQuality.Size = New-Object System.Drawing.Size(160, 24)
+$cmbQuality.Location = New-Object System.Drawing.Point(214, 24)
+$cmbQuality.Size = New-Object System.Drawing.Size(140, 24)
 foreach ($q in $script:Qualities) { [void] $cmbQuality.Items.Add($q.Label) }
 $cmbQuality.SelectedIndex = 1
 $grpMode.Controls.Add($cmbQuality)
 
 $cmbPreset = New-Object System.Windows.Forms.ComboBox
 $cmbPreset.DropDownStyle = 'DropDownList'
-$cmbPreset.Location = New-Object System.Drawing.Point(422, 24)
-$cmbPreset.Size = New-Object System.Drawing.Size(120, 24)
+$cmbPreset.Location = New-Object System.Drawing.Point(358, 24)
+$cmbPreset.Size = New-Object System.Drawing.Size(100, 24)
 foreach ($p in @('veryfast', 'medium', 'slow')) { [void] $cmbPreset.Items.Add($p) }
 $cmbPreset.SelectedIndex = 1
 $grpMode.Controls.Add($cmbPreset)
 
 $cmbEncoder = New-Object System.Windows.Forms.ComboBox
 $cmbEncoder.DropDownStyle = 'DropDownList'
-$cmbEncoder.Location = New-Object System.Drawing.Point(550, 24)
-$cmbEncoder.Size = New-Object System.Drawing.Size(190, 24)
+$cmbEncoder.Location = New-Object System.Drawing.Point(462, 24)
+$cmbEncoder.Size = New-Object System.Drawing.Size(170, 24)
 foreach ($e in $script:Encoders) { [void] $cmbEncoder.Items.Add($e.Label) }
 $cmbEncoder.SelectedIndex = 0
 $grpMode.Controls.Add($cmbEncoder)
 
+$cmbFps = New-Object System.Windows.Forms.ComboBox
+$cmbFps.DropDownStyle = 'DropDownList'
+$cmbFps.Location = New-Object System.Drawing.Point(636, 24)
+$cmbFps.Size = New-Object System.Drawing.Size(90, 24)
+foreach ($fp in $script:FpsOptions) { [void] $cmbFps.Items.Add($fp.Label) }
+$cmbFps.SelectedIndex = 0
+$grpMode.Controls.Add($cmbFps)
+
 $lblNote = New-Object System.Windows.Forms.Label
-$lblNote.Location = New-Object System.Drawing.Point(748, 27)
-$lblNote.Size = New-Object System.Drawing.Size(250, 22)
+$lblNote.Location = New-Object System.Drawing.Point(734, 27)
+$lblNote.Size = New-Object System.Drawing.Size(260, 22)
 $lblNote.ForeColor = [System.Drawing.Color]::DimGray
 $lblNote.Text = 'Quality/preset apply when encoding only.'
 $grpMode.Controls.Add($lblNote)
@@ -404,6 +423,7 @@ function Add-FilesTo-List {
 function Get-Mode { $script:Modes[$cmbMode.SelectedIndex].Value }
 function Get-Quality { $script:Qualities[$cmbQuality.SelectedIndex].Value }
 function Get-Encoder { return $script:Encoders[$cmbEncoder.SelectedIndex] }
+function Get-Fps { return [double] $script:FpsOptions[$cmbFps.SelectedIndex].Value }
 
 function Get-CliArgs {
     param([string[]] $Files, [string] $Out)
@@ -415,6 +435,8 @@ function Get-CliArgs {
         $parts += @('-Quality', (Get-Quality), '-Encoder', $enc.Kind)
         if ($enc.Kind -eq 'nvenc') { $parts += @('-GpuDevice', "$($enc.Device)") }
         $parts += @('-Preset', $cmbPreset.SelectedItem.ToString())
+        $fps = Get-Fps
+        if ($fps -gt 0) { $parts += @('-Fps', $fps.ToString([Globalization.CultureInfo]::InvariantCulture)) }
     }
     if ($script:Running -and $script:JobDir) {
         $parts += @('-Progress', (Quote-PS (Join-Path $script:JobDir 'ffprogress.txt')))
@@ -551,6 +573,7 @@ $cmbMode.Add_SelectedIndexChanged({
 })
 $cmbQuality.Add_SelectedIndexChanged({ Update-Preview })
 $cmbPreset.Add_SelectedIndexChanged({ Update-Preview })
+$cmbFps.Add_SelectedIndexChanged({ Update-Preview })
 $cmbEncoder.Add_SelectedIndexChanged({
     $encSel = Get-Encoder
     $lblNote.Text = if ($encSel.Kind -eq 'cpu') { 'CPU: most compatible, slowest.' }
@@ -587,6 +610,9 @@ $btnRun.Add_Click({
         if (-not $out) { throw 'Set an output folder / file name first.' }
         if (-not $out.ToLowerInvariant().EndsWith('.mp4')) { $out += '.mp4'; $txtOut.Text = $out }
         if ($script:Files -contains $out) { throw 'The output file is also in the input list. Remove it first.' }
+        if ((Get-Mode) -eq 'copy' -and (Get-Fps) -gt 0) {
+            throw 'Copy mode cannot change frame rate. Switch Mode to HEVC or H.264, or set fps back to Auto.'
+        }
         $outDir = Split-Path -Parent $out
         if ($outDir -and -not (Test-Path -LiteralPath $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 

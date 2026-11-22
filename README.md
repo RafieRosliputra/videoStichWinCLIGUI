@@ -75,7 +75,7 @@ explorer "$env:LOCALAPPDATA\Programs\videoStitch"
 
 ### 3a-alt. Tanpa installer (portable)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.6.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.1.7.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik
@@ -127,6 +127,7 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\bin\stitch.ps1 -Files
 | `-Quality` | `high` (CRF 20) · `balanced` (CRF 23, default) · `small` (CRF 28) |
 | `-Encoder` | `auto` (default) · `nvenc` · `qsv` · `amf` · `mf` · `cpu` |
 | `-GpuDevice` | Indeks GPU NVIDIA (0 = pertama). Default 0 |
+| `-Fps` | Paksa fps output, cth `-Fps 60`. Default 0 = auto (fps tertinggi antara klip) |
 | `-Preset` | x264/x265 preset, default `medium` |
 | `-Crf` | Override CRF terus (menang atas `-Quality`) |
 | `-Progress` `-Log` `-State` | Fail kerja (GUI guna ini) |
@@ -166,6 +167,8 @@ CPU (x265/x264)
 Pilih baris GPU → GUI hantar `-Encoder nvenc -GpuDevice 0`. Kalau ada 2 kad NVIDIA, setiap satu disenaraikan dengan indeksnya. Nama GPU dikesan melalui `nvidia-smi` + WMI `Win32_VideoController`.
 
 Pemetaan kualiti per enjin: CPU `-crf`, NVENC `-cq` (CQ = CRF−1), QSV `-global_quality`, AMF `-qp_i/-qp_p`, MF `-b:v` (10M/6M/3M).
+
+**Paksa fps:** `-Fps 60` (GUI: dropdown fps). Hanya berkesan dalam mod encode — **Copy tak boleh ubah fps** (stream copy kekalkan kadar asal) dan CLI akan menolaknya dengan mesej jelas. Perhatian: memaksa 59.94 → 60 cuma menduplikasi ~0.06% frame (tak nampak); memaksa 30 → 60 menduplikasi 50% frame = fail lebih besar tanpa gerakan lebih licin (perlu interpolation, belum disokong).
 
 **Tahap kualiti (CRF, lebih kecil = lebih bagus & lebih besar):**
 

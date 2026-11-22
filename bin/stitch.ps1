@@ -61,6 +61,7 @@ param(
     [ValidateSet('high', 'balanced', 'small')] [string] $Quality = 'balanced',
     [ValidateSet('auto', 'cpu', 'nvenc', 'qsv', 'amf', 'mf')] [string] $Encoder = 'auto',
     [int]      $GpuDevice = 0,
+    [double]   $Fps = 0,
     [string]   $Preset = 'medium',
     [int]      $Crf = 0,
     [string]   $FFmpeg,
@@ -340,12 +341,13 @@ function Resolve-Encoder {
 
 function Get-NormalizeFilter {
     # Semua input -> saiz/fps yang sama; aspect kekal (pad hitam).
-    param([object[]] $Infos)
+    param([object[]] $Infos, [double] $ForceFps = 0)
     $w = ($Infos | Measure-Object -Property Width  -Maximum).Maximum
     $h = ($Infos | Measure-Object -Property Height -Maximum).Maximum
     $fps = ($Infos | Measure-Object -Property Fps    -Maximum).Maximum
     $w = [int]([Math]::Floor($w / 2) * 2); $h = [int]([Math]::Floor($h / 2) * 2)
     if ($w -lt 2) { $w = 2 }; if ($h -lt 2) { $h = 2 }
+    if ($ForceFps -gt 0) { $fps = $ForceFps }
     if (-not $fps -or $fps -lt 1) { $fps = 30 }
     $f = ("{0:0.###}" -f $fps)
     return "scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
@@ -362,7 +364,7 @@ function Quote-Arg {
 function Invoke-Stitch {
     param(
         [string[]] $Files, [string] $Out, [string] $Mode, [string] $Quality,
-        [string] $Encoder = 'auto', [int] $GpuDevice = 0, [string] $Preset, [int] $Crf, [string] $FFmpeg,
+        [string] $Encoder = 'auto', [int] $GpuDevice = 0, [double] $Fps = 0, [string] $Preset, [int] $Crf, [string] $FFmpeg,
         [switch] $Install, [string] $Progress, [string] $Log, [string] $State
     )
 
@@ -408,6 +410,7 @@ function Invoke-Stitch {
         if ($total -gt 0) { $lines += ('TOTAL=' + $total.ToString([Globalization.CultureInfo]::InvariantCulture)) }
         $lines += ('MODE=' + $Mode)
         if ($Mode -ne 'copy') { $lines += ('ENCODER=' + $encName) }
+        if ($Fps -gt 0) { $lines += ('FPS=' + $Fps) }
         if ($status -like 'ERROR*') {
             $lines += 'STATUS=ERROR'
             $lines += ('DETAIL=' + ($status -replace '^ERROR ?', ''))
@@ -427,6 +430,9 @@ function Invoke-Stitch {
         $msg = "Copy mode is not safe, clips are not uniform:`n  " + ($issues -join "`n  ") + "`n`nUse -Mode hevc or -Mode h264."
         & $setState ('ERROR ' + ($issues -join '; ')) $total
         throw $msg
+    }
+    if ($Mode -eq 'copy' -and $Fps -gt 0) {
+        throw "Copy mode cannot change frame rate (fps stays $($infos[0].Fps)). Use -Mode hevc or -Mode h264 to force $Fps fps."
     }
     if ($Mode -eq 'copy') { Write-Host '[2/4] All clips uniform: stream copy is safe.' -ForegroundColor Green }
     else {
@@ -451,7 +457,7 @@ function Invoke-Stitch {
         foreach ($a in @('-c', 'copy', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero')) { $ffArgs.Add($a) }
     }
     else {
-        $filter = Get-NormalizeFilter -Infos $infos
+        $filter = Get-NormalizeFilter -Infos $infos -ForceFps $Fps
         $plan = Get-EncoderPlan -Encoder $encName -Mode $Mode -Q $Quality -CrfOverride $Crf -Preset $Preset -GpuDevice $GpuDevice
         foreach ($a in @($plan.Args)) { $ffArgs.Add($a) }
         foreach ($a in @('-pix_fmt', 'yuv420p', '-vf', (Quote-Arg $filter))) { $ffArgs.Add($a) }
@@ -507,7 +513,7 @@ function Invoke-Stitch {
 # Jalankan hanya bila dipanggil sebagai skrip (bukan dot-source oleh test).
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Encoder $Encoder -GpuDevice $GpuDevice -Preset $Preset `
+        Invoke-Stitch -Files $Files -Out $Out -Mode $Mode -Quality $Quality -Encoder $Encoder -GpuDevice $GpuDevice -Fps $Fps -Preset $Preset `
                       -Crf $Crf -FFmpeg $FFmpeg -Install:$Install -Progress $Progress -Log $Log -State $State | Out-Null
         exit 0
     }

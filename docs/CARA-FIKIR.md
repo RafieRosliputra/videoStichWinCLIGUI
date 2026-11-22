@@ -160,6 +160,14 @@ Tradeoff diterima: GPU encode pada CQ sepadan biasanya 1.2–1.8× lebih besar d
 
 ---
 
+## 4c. Paksa fps: kenapa hanya dalam mod encode
+
+`-c copy` menyalin paket asal; mengubah fps bermakna mengubah PTS setiap frame — itu kerja re-encode. Jadi `-Fps` hanya dipakai dalam `-Mode hevc/h264` (melalui filter `fps=`), dan CLI menolak kombinasi `copy + -Fps` dengan mesej jelas (bukan senyap mengabaikan).
+
+Kesan sampingan yang didokumen: `fps=60` pada sumber 59.94 menduplikasi ~0.06% frame (tak ketara), tetapi `fps=60` pada sumber 30 menduplikasi 50% frame — fail membesar tanpa gerakan lebih licin. Untuk gerakan lebih licin sebenar perlu interpolation (`minterpolate`), yang jauh lebih berat dan belum dimasukkan.
+
+---
+
 ## 5. Natural sort, bukan ordinal
 
 Ordinal (`Get-ChildItem | Sort-Object Name`) susun `clip10.mp4` **sebelum** `clip2.mp4` — salah untuk senarai rakaman kamera. Algoritma dipakai:

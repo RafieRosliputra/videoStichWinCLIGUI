@@ -130,6 +130,12 @@ Check 'filter: dimensi maksimum dibundarkan genap' {
     Assert-True ($f -match 'fps=30')
 }
 
+Check 'filter: force fps 60' {
+    $infos = @((New-Info 'a.mp4' -Fps 59.94), (New-Info 'b.mp4' -Fps 59.94))
+    $f = Get-NormalizeFilter -Infos $infos -ForceFps 60
+    Assert-True ($f -match 'fps=60(,|$)') "filter: $f"
+}
+
 Check 'crf default ikut tahap' {
     Assert-Equal (Get-EncodeSettings -Q 'high' -CrfOverride 0 -Preset medium -Mode hevc).Crf 20
     Assert-Equal (Get-EncodeSettings -Q 'balanced' -CrfOverride 0 -Preset medium -Mode hevc).Crf 23
@@ -204,11 +210,12 @@ function Invoke-Cli {
     param(
         [string[]] $Files, [string] $Out, [string] $Mode = 'copy',
         [string] $Quality = 'balanced', [string] $Preset = 'medium',
-        [string] $State, [string] $Progress, [string] $Log
+        [double] $Fps = 0, [string] $State, [string] $Progress, [string] $Log
     )
     $fileList = ($Files | ForEach-Object { Quote-PS $_ }) -join ','
     $cmd = "& " + (Quote-PS $cli) + " -Files $fileList -Out " + (Quote-PS $Out) + " -Mode $Mode"
     if ($Mode -ne 'copy') { $cmd += " -Quality $Quality -Preset $Preset" }
+    if ($Fps -gt 0) { $cmd += " -Fps $Fps" }
     if ($State)    { $cmd += " -State " + (Quote-PS $State) }
     if ($Progress) { $cmd += " -Progress " + (Quote-PS $Progress) }
     if ($Log)      { $cmd += " -Log " + (Quote-PS $Log) }
@@ -224,6 +231,22 @@ function New-TestClip {
     $o = & ffmpeg -v error -y -f lavfi -i "color=c=${Color}:s=320x240:r=30:d=$Seconds" `
              -f lavfi -i "sine=f=440:d=$Seconds" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac $Path 2>&1
     if ($LASTEXITCODE -ne 0) { throw "gagal jana klip: $Path :: $($o -join ' | ')" }
+}
+
+Check 'copy + force fps ditolak' {
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'ffmpeg tiada' }
+    $tmp = Join-Path $TmpBase ('vs-fps-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $a = Join-Path $tmp 'a.mp4'; $b = Join-Path $tmp 'b.mp4'
+        New-TestClip -Path $a -Color red -Seconds 1
+        New-TestClip -Path $b -Color blue -Seconds 1
+        $r = Invoke-Cli -Files @($a, $b) -Out (Join-Path $tmp 'o.mp4') -Mode copy -Fps 60
+        $txt = ($r -join "`n")
+        Assert-True ($LASTEXITCODE -ne 0) 'sepatutnya gagal'
+        Assert-True ($txt -match 'cannot change frame rate') "message: $txt"
+    }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Check 'cantuman copy + hevc pada klip sebenar' {
