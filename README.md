@@ -75,7 +75,7 @@ explorer "$env:LOCALAPPDATA\Programs\videoStitch"
 
 ### 3a-alt. Tanpa installer (portable)
 
-1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.2.0.zip`
+1. Buka [Releases](../../releases/latest) → muat turun `videoStitch-v0.2.1.zip`
 2. Klik kanan zip → **Extract All...** (jangan jalankan dari dalam zip)
 3. Kalau muncul *"Windows protected your PC"* (SmartScreen): **More info → Run anyway** — fail belum di-sign, kod sumber terbuka
 4. Double-click **`gui.cmd`** → GUI muncul; konsol launcher disembunyikan automatik

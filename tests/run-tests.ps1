@@ -131,6 +131,18 @@ Check 'filter: dimensi maksimum dibundarkan genap' {
     Assert-True ($f -match 'fps=30')
 }
 
+Check 'fps sasaran: mode, bukan maksimum' {
+    $infos = @()
+    for ($i = 0; $i -lt 5; $i++) { $infos += (New-Info "a$i.mp4" -Fps 59.94) }
+    $infos += (New-Info 'slowmo.mp4' -Fps 100)
+    Assert-Equal (Get-TargetFps -Infos $infos) 59.94
+}
+
+Check 'fps sasaran: force menang' {
+    $infos = @((New-Info 'a.mp4' -Fps 59.94), (New-Info 'b.mp4' -Fps 100))
+    Assert-Equal (Get-TargetFps -Infos $infos -ForceFps 60) 60
+}
+
 Check 'filter: force fps 60' {
     $infos = @((New-Info 'a.mp4' -Fps 59.94), (New-Info 'b.mp4' -Fps 59.94))
     $f = Get-NormalizeFilter -Infos $infos -ForceFps 60
@@ -303,7 +315,7 @@ Check 'cantuman dengan apostrof dalam nama fail' {
 
 Check 'CLI -Version cetak versi' {
     $r = & $psExe -NoProfile -File $cli -Version
-    Assert-Equal ($r -join '').Trim() '0.2.0'
+    Assert-Equal ($r -join '').Trim() '0.2.1'
 }
 
 Check 'senarai fail dalam satu argumen koma (-File)' {

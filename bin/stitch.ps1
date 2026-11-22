@@ -74,7 +74,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:AppVersion = '0.2.0'
+$script:AppVersion = '0.2.1'
 if ($Version) { Write-Output $script:AppVersion; return }
 
 $script:CrfMap = @{ high = 20; balanced = 23; small = 28 }
@@ -340,15 +340,29 @@ function Resolve-Encoder {
     return 'cpu'
 }
 
+function Get-TargetFps {
+    # fps sasaran: -Fps kalau diberi; jika tidak, fps PALING KERAP (mode),
+    # bukan maksimum - satu klip 100 fps tak patut ubah seluruh output.
+    param([object[]] $Infos, [double] $ForceFps = 0)
+    if ($ForceFps -gt 0) { return [Math]::Round($ForceFps, 3) }
+    $vals = @($Infos | Where-Object { $_.Fps -gt 0 } | ForEach-Object { $_.Fps })
+    if ($vals.Count -eq 0) { return 30.0 }
+    # tie-break: fps lebih tinggi menang (deterministik)
+    $top = $vals | Group-Object |
+        Sort-Object -Property @{ Expression = { $_.Count }; Descending = $true },
+                              @{ Expression = { [double] $_.Name }; Descending = $true } |
+        Select-Object -First 1
+    return [Math]::Round([double] $top.Name, 3)
+}
+
 function Get-NormalizeFilter {
     # Semua input -> saiz/fps yang sama; aspect kekal (pad hitam).
     param([object[]] $Infos, [double] $ForceFps = 0)
     $w = ($Infos | Measure-Object -Property Width  -Maximum).Maximum
     $h = ($Infos | Measure-Object -Property Height -Maximum).Maximum
-    $fps = ($Infos | Measure-Object -Property Fps    -Maximum).Maximum
+    $fps = Get-TargetFps -Infos $Infos -ForceFps $ForceFps
     $w = [int]([Math]::Floor($w / 2) * 2); $h = [int]([Math]::Floor($h / 2) * 2)
     if ($w -lt 2) { $w = 2 }; if ($h -lt 2) { $h = 2 }
-    if ($ForceFps -gt 0) { $fps = $ForceFps }
     if (-not $fps -or $fps -lt 1) { $fps = 30 }
     $f = ("{0:0.###}" -f $fps)
     return "scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2," +
@@ -450,6 +464,12 @@ function Invoke-Stitch {
         $label = switch ($encName) { 'cpu' { 'CPU' } 'nvenc' { 'GPU NVENC' } 'qsv' { 'GPU QSV' } 'amf' { 'GPU AMF' } 'mf' { 'GPU MediaFoundation' } }
         $crfShown = if ($Crf -gt 0) { $Crf } else { $script:CrfMap[$Quality] }
         Write-Host "[2/4] Encoding $Mode with $label (quality $Quality = $crfShown, preset $Preset)." -ForegroundColor Green
+        $fpsSet = @($infos | Where-Object { $_.Fps -gt 0 } | ForEach-Object { $_.Fps } | Sort-Object -Unique)
+        if ($fpsSet.Count -gt 1 -and $Fps -le 0) {
+            $t = Get-TargetFps -Infos $infos -ForceFps $Fps
+            $odd = ($infos | Where-Object { $_.Fps -gt 0 -and [Math]::Abs($_.Fps - $t) -gt 0.05 } | ForEach-Object { (Split-Path -Leaf $_.Path) + '=' + $_.Fps }) -join ', '
+            Write-Host "[2/4] fps differ; auto target $t (most common). Resampled: $odd" -ForegroundColor Yellow
+        }
     }
 
     # 3) arahan
